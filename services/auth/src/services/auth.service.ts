@@ -6,6 +6,7 @@ import { User, RefreshToken } from '@auth/models/index.js';
 import type { UserDocument } from '@auth/models/index.js';
 import { createError, type JwtPayload } from '@pmt/shared';
 
+const LOG_PREFIX = '[AuthService]';
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
 const JWT_ACCESS_EXPIRY = (process.env.JWT_ACCESS_EXPIRY || '1h') as StringValue;
 const JWT_REFRESH_EXPIRY = (process.env.JWT_REFRESH_EXPIRY || '7d') as StringValue;
@@ -29,23 +30,29 @@ export class AuthService {
    * Login user with email and password
    */
   async login(email: string, password: string): Promise<LoginResult> {
+    console.info(`${LOG_PREFIX} Login attempt`, { email });
+    
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
+      console.warn(`${LOG_PREFIX} Login failed - user not found`, { email });
       throw createError.authentication('Invalid email or password');
     }
 
     // Check if account is locked
     if (user.lockedUntil && user.lockedUntil > new Date()) {
+      console.warn(`${LOG_PREFIX} Login failed - account locked`, { email, lockedUntil: user.lockedUntil });
       throw createError.authentication('Account is temporarily locked. Please try again later.');
     }
 
     // Check if account is suspended
     if (user.status === 'suspended') {
+      console.warn(`${LOG_PREFIX} Login failed - account suspended`, { email, userId: user._id.toString() });
       throw createError.authorization('Account has been suspended. Please contact HR.');
     }
 
     if (user.status === 'inactive') {
+      console.warn(`${LOG_PREFIX} Login failed - account inactive`, { email, userId: user._id.toString() });
       throw createError.authorization('Account is inactive. Please contact HR.');
     }
 
@@ -55,9 +62,19 @@ export class AuthService {
     if (!isValidPassword) {
       // Increment failed attempts
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      console.warn(`${LOG_PREFIX} Login failed - invalid password`, { 
+        email, 
+        userId: user._id.toString(), 
+        failedAttempts: user.failedLoginAttempts 
+      });
 
       if (user.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
         user.lockedUntil = new Date(Date.now() + LOCK_TIME);
+        console.warn(`${LOG_PREFIX} Account locked due to failed attempts`, { 
+          email, 
+          userId: user._id.toString(), 
+          lockedUntil: user.lockedUntil 
+        });
       }
 
       await user.save();
@@ -73,6 +90,12 @@ export class AuthService {
     // Generate tokens
     const tokens = await this.generateTokens(user);
 
+    console.info(`${LOG_PREFIX} Login successful`, { 
+      userId: user._id.toString(), 
+      email, 
+      role: user.role 
+    });
+    
     return { tokens, user };
   }
 
@@ -80,6 +103,8 @@ export class AuthService {
    * Generate access and refresh tokens
    */
   async generateTokens(user: UserDocument): Promise<TokenPair> {
+    console.info(`${LOG_PREFIX} Generating tokens`, { userId: user._id.toString() });
+    
     const payload: JwtPayload = {
       sub: user._id.toString(),
       email: user.email,
@@ -105,6 +130,11 @@ export class AuthService {
       expiresAt,
     });
 
+    console.info(`${LOG_PREFIX} Tokens generated successfully`, { 
+      userId: user._id.toString(), 
+      expiresIn: 3600 
+    });
+    
     return {
       accessToken,
       refreshToken,
@@ -116,11 +146,14 @@ export class AuthService {
    * Refresh access token using refresh token
    */
   async refreshAccessToken(refreshToken: string): Promise<TokenPair> {
+    console.info(`${LOG_PREFIX} Refreshing access token`);
+    
     let decoded: { sub: string };
 
     try {
       decoded = jwt.verify(refreshToken, JWT_SECRET) as { sub: string };
-    } catch {
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} Token refresh failed - invalid token`);
       throw createError.authentication('Invalid or expired refresh token');
     }
 
@@ -134,6 +167,7 @@ export class AuthService {
     });
 
     if (!storedToken) {
+      console.warn(`${LOG_PREFIX} Token refresh failed - token not found or expired`, { userId: decoded.sub });
       throw createError.authentication('Invalid or expired refresh token');
     }
 
@@ -144,9 +178,12 @@ export class AuthService {
     const user = await User.findById(decoded.sub);
 
     if (!user || user.status !== 'active') {
+      console.warn(`${LOG_PREFIX} Token refresh failed - user not found or inactive`, { userId: decoded.sub });
       throw createError.authentication('User not found or inactive');
     }
 
+    console.info(`${LOG_PREFIX} Token refresh successful`, { userId: decoded.sub });
+    
     // Generate new tokens
     return this.generateTokens(user);
   }
@@ -155,19 +192,26 @@ export class AuthService {
    * Logout user - revoke refresh token
    */
   async logout(userId: string): Promise<void> {
-    await RefreshToken.updateMany(
+    console.info(`${LOG_PREFIX} Logging out user`, { userId });
+    
+    const result = await RefreshToken.updateMany(
       { userId, revokedAt: null },
       { revokedAt: new Date() }
     );
+    
+    console.info(`${LOG_PREFIX} Logout successful`, { userId, tokensRevoked: result.modifiedCount });
   }
 
   /**
    * Request password reset
    */
   async forgotPassword(email: string): Promise<string | null> {
+    console.info(`${LOG_PREFIX} Password reset requested`, { email });
+    
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
+      console.info(`${LOG_PREFIX} Password reset - user not found (silent)`, { email });
       // Return null but don't throw - prevents email enumeration
       return null;
     }
@@ -180,6 +224,12 @@ export class AuthService {
     user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
+    console.info(`${LOG_PREFIX} Password reset token generated`, { 
+      userId: user._id.toString(), 
+      email, 
+      expiresAt: user.passwordResetExpires 
+    });
+    
     return resetToken;
   }
 
@@ -187,6 +237,8 @@ export class AuthService {
    * Reset password with token
    */
   async resetPassword(token: string, newPassword: string): Promise<void> {
+    console.info(`${LOG_PREFIX} Password reset attempt`);
+    
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     const user = await User.findOne({
@@ -195,6 +247,7 @@ export class AuthService {
     });
 
     if (!user) {
+      console.warn(`${LOG_PREFIX} Password reset failed - invalid or expired token`);
       throw createError.validation('Invalid or expired reset token');
     }
 
@@ -207,22 +260,32 @@ export class AuthService {
     await user.save();
 
     // Revoke all refresh tokens
-    await RefreshToken.updateMany(
+    const result = await RefreshToken.updateMany(
       { userId: user._id, revokedAt: null },
       { revokedAt: new Date() }
     );
+
+    console.info(`${LOG_PREFIX} Password reset successful`, { 
+      userId: user._id.toString(), 
+      tokensRevoked: result.modifiedCount 
+    });
   }
 
   /**
    * Get current user by ID
    */
   async getCurrentUser(userId: string): Promise<UserDocument> {
+    console.info(`${LOG_PREFIX} Getting current user`, { userId });
+    
     const user = await User.findById(userId);
 
     if (!user) {
+      console.warn(`${LOG_PREFIX} User not found`, { userId });
       throw createError.notFound('User');
     }
 
+    console.info(`${LOG_PREFIX} User retrieved`, { userId, email: user.email, role: user.role });
+    
     return user;
   }
 
@@ -235,9 +298,12 @@ export class AuthService {
     role?: string;
     employeeId?: string;
   }): Promise<UserDocument> {
+    console.info(`${LOG_PREFIX} Creating user`, { email: data.email, role: data.role || 'employee' });
+    
     const existingUser = await User.findOne({ email: data.email.toLowerCase() });
 
     if (existingUser) {
+      console.warn(`${LOG_PREFIX} User creation failed - email exists`, { email: data.email });
       throw createError.conflict('User with this email already exists');
     }
 
@@ -251,6 +317,12 @@ export class AuthService {
       employeeId: data.employeeId,
     });
 
+    console.info(`${LOG_PREFIX} User created successfully`, { 
+      userId: user._id.toString(), 
+      email: user.email, 
+      role: user.role 
+    });
+    
     return user;
   }
 }

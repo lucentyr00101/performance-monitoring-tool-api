@@ -5,6 +5,8 @@ import type { FilterQuery } from 'mongoose';
 import type { z } from 'zod';
 import type { departmentQuerySchema } from '@pmt/shared';
 
+const LOG_PREFIX = '[DepartmentService]';
+
 export interface CreateDepartmentDTO {
   name: string;
   description?: string;
@@ -32,6 +34,12 @@ export class DepartmentService {
    * List departments with filtering
    */
   async listDepartments(params: DepartmentQueryParams): Promise<DepartmentDocument[]> {
+    console.info(`${LOG_PREFIX} Listing departments`, { 
+      status: params.status, 
+      parentId: params.parent_id, 
+      search: params.search 
+    });
+    
     const query: FilterQuery<DepartmentDocument> = {};
 
     if (params.status) {
@@ -49,6 +57,8 @@ export class DepartmentService {
       .populate('managerId', 'firstName lastName')
       .sort({ name: 1 });
 
+    console.info(`${LOG_PREFIX} Departments listed`, { count: departments.length });
+    
     return departments;
   }
 
@@ -56,11 +66,14 @@ export class DepartmentService {
    * Get department by ID
    */
   async getDepartmentById(id: string): Promise<DepartmentDocument & { employeeCount: number }> {
+    console.info(`${LOG_PREFIX} Getting department by ID`, { departmentId: id });
+    
     const department = await Department.findById(id)
       .populate('parentId', 'name')
       .populate('managerId', 'firstName lastName');
 
     if (!department) {
+      console.warn(`${LOG_PREFIX} Department not found`, { departmentId: id });
       throw new AppError('NOT_FOUND', 'Department not found', 404);
     }
 
@@ -70,6 +83,12 @@ export class DepartmentService {
       status: { $ne: 'terminated' },
     });
 
+    console.info(`${LOG_PREFIX} Department retrieved`, { 
+      departmentId: id, 
+      name: department.name, 
+      employeeCount 
+    });
+    
     return Object.assign(department.toObject(), { employeeCount });
   }
 
@@ -77,9 +96,12 @@ export class DepartmentService {
    * Create a new department
    */
   async createDepartment(data: CreateDepartmentDTO): Promise<DepartmentDocument> {
+    console.info(`${LOG_PREFIX} Creating department`, { name: data.name, parentId: data.parentId });
+    
     // Check for duplicate name
     const existingDepartment = await Department.findOne({ name: data.name });
     if (existingDepartment) {
+      console.warn(`${LOG_PREFIX} Department creation failed - name exists`, { name: data.name });
       throw new AppError('CONFLICT', 'Department with this name already exists', 409);
     }
 
@@ -87,6 +109,7 @@ export class DepartmentService {
     if (data.parentId) {
       const parentDept = await Department.findById(data.parentId);
       if (!parentDept) {
+        console.warn(`${LOG_PREFIX} Department creation failed - parent not found`, { parentId: data.parentId });
         throw new AppError('NOT_FOUND', 'Parent department not found', 404);
       }
     }
@@ -95,12 +118,18 @@ export class DepartmentService {
     if (data.managerId) {
       const manager = await Employee.findById(data.managerId);
       if (!manager) {
+        console.warn(`${LOG_PREFIX} Department creation failed - manager not found`, { managerId: data.managerId });
         throw new AppError('NOT_FOUND', 'Manager employee not found', 404);
       }
     }
 
     const department = await Department.create(data);
 
+    console.info(`${LOG_PREFIX} Department created successfully`, { 
+      departmentId: department._id.toString(), 
+      name: department.name 
+    });
+    
     return department.populate([
       { path: 'parentId', select: 'name' },
       { path: 'managerId', select: 'firstName lastName' },
@@ -111,9 +140,12 @@ export class DepartmentService {
    * Update a department
    */
   async updateDepartment(id: string, data: UpdateDepartmentDTO): Promise<DepartmentDocument> {
+    console.info(`${LOG_PREFIX} Updating department`, { departmentId: id, fields: Object.keys(data) });
+    
     const department = await Department.findById(id);
 
     if (!department) {
+      console.warn(`${LOG_PREFIX} Update failed - department not found`, { departmentId: id });
       throw new AppError('NOT_FOUND', 'Department not found', 404);
     }
 
@@ -124,6 +156,7 @@ export class DepartmentService {
         _id: { $ne: id },
       });
       if (existingDepartment) {
+        console.warn(`${LOG_PREFIX} Update failed - name exists`, { name: data.name });
         throw new AppError('CONFLICT', 'Department with this name already exists', 409);
       }
     }
@@ -131,10 +164,12 @@ export class DepartmentService {
     // Validate parent department
     if (data.parentId !== undefined && data.parentId !== null) {
       if (data.parentId === id) {
+        console.warn(`${LOG_PREFIX} Update failed - self-referencing parent`, { departmentId: id });
         throw new AppError('VALIDATION_ERROR', 'Department cannot be its own parent', 422);
       }
       const parentDept = await Department.findById(data.parentId);
       if (!parentDept) {
+        console.warn(`${LOG_PREFIX} Update failed - parent not found`, { parentId: data.parentId });
         throw new AppError('NOT_FOUND', 'Parent department not found', 404);
       }
     }
@@ -143,6 +178,7 @@ export class DepartmentService {
     if (data.managerId !== undefined && data.managerId !== null) {
       const manager = await Employee.findById(data.managerId);
       if (!manager) {
+        console.warn(`${LOG_PREFIX} Update failed - manager not found`, { managerId: data.managerId });
         throw new AppError('NOT_FOUND', 'Manager employee not found', 404);
       }
     }
@@ -150,6 +186,8 @@ export class DepartmentService {
     Object.assign(department, data);
     await department.save();
 
+    console.info(`${LOG_PREFIX} Department updated successfully`, { departmentId: id });
+    
     return department.populate([
       { path: 'parentId', select: 'name' },
       { path: 'managerId', select: 'firstName lastName' },
@@ -160,9 +198,12 @@ export class DepartmentService {
    * Delete a department (soft delete by setting status to inactive)
    */
   async deleteDepartment(id: string): Promise<void> {
+    console.info(`${LOG_PREFIX} Deleting department (soft)`, { departmentId: id });
+    
     const department = await Department.findById(id);
 
     if (!department) {
+      console.warn(`${LOG_PREFIX} Delete failed - department not found`, { departmentId: id });
       throw new AppError('NOT_FOUND', 'Department not found', 404);
     }
 
@@ -173,6 +214,7 @@ export class DepartmentService {
     });
 
     if (employeeCount > 0) {
+      console.warn(`${LOG_PREFIX} Delete failed - has active employees`, { departmentId: id, employeeCount });
       throw new AppError('CONFLICT', 'Cannot delete department with active employees', 409);
     }
 
@@ -183,17 +225,25 @@ export class DepartmentService {
     });
 
     if (childCount > 0) {
+      console.warn(`${LOG_PREFIX} Delete failed - has child departments`, { departmentId: id, childCount });
       throw new AppError('CONFLICT', 'Cannot delete department with active child departments', 409);
     }
 
     department.status = 'inactive';
     await department.save();
+    
+    console.info(`${LOG_PREFIX} Department deleted successfully`, { 
+      departmentId: id, 
+      name: department.name 
+    });
   }
 
   /**
    * Get department hierarchy
    */
   async getDepartmentHierarchy(): Promise<DepartmentHierarchyNode[]> {
+    console.info(`${LOG_PREFIX} Getting department hierarchy`);
+    
     const departments = await Department.find({ status: 'active' })
       .select('name description parentId managerId')
       .populate('managerId', 'firstName lastName')
@@ -247,6 +297,11 @@ export class DepartmentService {
       }
     });
 
+    console.info(`${LOG_PREFIX} Department hierarchy retrieved`, { 
+      totalDepartments: departments.length, 
+      rootCount: rootDepartments.length 
+    });
+    
     return rootDepartments;
   }
 }

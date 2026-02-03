@@ -49,9 +49,5 @@ WORKDIR /app/services/auth
 # Expose port
 EXPOSE 4001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:4001/health || exit 1
-
 # Start the service
 CMD ["bun", "run", "dist/index.js"]

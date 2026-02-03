@@ -3,6 +3,8 @@ import { ReviewCycle } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
 
+const LOG_PREFIX = '[ReviewService]';
+
 export interface UpdateReviewDTO {
   rating?: number;
   ratingsBreakdown?: Record<string, number>;
@@ -33,6 +35,8 @@ export class ReviewService {
     filters: ReviewFilters,
     pagination: Pagination
   ): Promise<{ reviews: ReviewDocument[]; total: number }> {
+    console.info(`${LOG_PREFIX} Listing reviews`, { filters, page: pagination.page, perPage: pagination.perPage });
+
     const query: FilterQuery<ReviewDocument> = {};
 
     if (filters.cycleId) query.reviewCycleId = filters.cycleId;
@@ -52,27 +56,36 @@ export class ReviewService {
       Review.countDocuments(query),
     ]);
 
+    console.info(`${LOG_PREFIX} Reviews listed`, { count: reviews.length, total });
     return { reviews, total };
   }
 
   async getReviewById(id: string): Promise<ReviewDocument> {
+    console.info(`${LOG_PREFIX} Getting review by ID`, { reviewId: id });
+
     const review = await Review.findById(id);
 
     if (!review) {
+      console.warn(`${LOG_PREFIX} Review not found`, { reviewId: id });
       throw new AppError('NOT_FOUND', 'Review not found', 404);
     }
 
+    console.info(`${LOG_PREFIX} Review retrieved`, { reviewId: id, status: review.status, employeeId: review.employeeId });
     return review;
   }
 
   async updateReview(id: string, data: UpdateReviewDTO, userId: string): Promise<ReviewDocument> {
+    console.info(`${LOG_PREFIX} Updating review`, { reviewId: id, userId, updateFields: Object.keys(data) });
+
     const review = await Review.findById(id);
 
     if (!review) {
+      console.warn(`${LOG_PREFIX} Review not found`, { reviewId: id });
       throw new AppError('NOT_FOUND', 'Review not found', 404);
     }
 
     if (review.status === 'finalized') {
+      console.warn(`${LOG_PREFIX} Cannot update finalized review`, { reviewId: id, status: review.status });
       throw new AppError('CONFLICT', 'Cannot update a finalized review', 409);
     }
 
@@ -88,34 +101,46 @@ export class ReviewService {
     if (data.status) review.status = data.status;
 
     await review.save();
+
+    console.info(`${LOG_PREFIX} Review updated`, { reviewId: id, status: review.status });
     return review;
   }
 
   async submitReview(id: string): Promise<ReviewDocument> {
+    console.info(`${LOG_PREFIX} Submitting review`, { reviewId: id });
+
     const review = await Review.findById(id);
 
     if (!review) {
+      console.warn(`${LOG_PREFIX} Review not found`, { reviewId: id });
       throw new AppError('NOT_FOUND', 'Review not found', 404);
     }
 
     if (review.status !== 'pending' && review.status !== 'in_progress') {
+      console.warn(`${LOG_PREFIX} Cannot submit review with invalid status`, { reviewId: id, status: review.status });
       throw new AppError('CONFLICT', `Cannot submit review with status: ${review.status}`, 409);
     }
 
     review.status = 'submitted';
     review.submittedAt = new Date();
     await review.save();
+
+    console.info(`${LOG_PREFIX} Review submitted`, { reviewId: id, submittedAt: review.submittedAt });
     return review;
   }
 
   async acknowledgeReview(id: string, employeeComments?: string): Promise<ReviewDocument> {
+    console.info(`${LOG_PREFIX} Acknowledging review`, { reviewId: id, hasComments: !!employeeComments });
+
     const review = await Review.findById(id);
 
     if (!review) {
+      console.warn(`${LOG_PREFIX} Review not found`, { reviewId: id });
       throw new AppError('NOT_FOUND', 'Review not found', 404);
     }
 
     if (review.status !== 'submitted') {
+      console.warn(`${LOG_PREFIX} Only submitted reviews can be acknowledged`, { reviewId: id, status: review.status });
       throw new AppError('CONFLICT', 'Only submitted reviews can be acknowledged', 409);
     }
 
@@ -125,6 +150,8 @@ export class ReviewService {
       review.employeeComments = employeeComments;
     }
     await review.save();
+
+    console.info(`${LOG_PREFIX} Review acknowledged`, { reviewId: id, acknowledgedAt: review.acknowledgedAt });
     return review;
   }
 
@@ -134,11 +161,15 @@ export class ReviewService {
     reviewerId: string;
     reviewerType: 'self' | 'manager' | 'peer' | 'hr';
   }): Promise<ReviewDocument> {
+    console.info(`${LOG_PREFIX} Creating review`, { cycleId: data.reviewCycleId, employeeId: data.employeeId, reviewerType: data.reviewerType });
+
     const cycle = await ReviewCycle.findById(data.reviewCycleId);
     if (!cycle) {
+      console.warn(`${LOG_PREFIX} Review cycle not found`, { cycleId: data.reviewCycleId });
       throw new AppError('NOT_FOUND', 'Review cycle not found', 404);
     }
     if (cycle.status !== 'active') {
+      console.warn(`${LOG_PREFIX} Can only create reviews for active review cycles`, { cycleId: data.reviewCycleId, status: cycle.status });
       throw new AppError('CONFLICT', 'Can only create reviews for active review cycles', 409);
     }
 
@@ -148,6 +179,7 @@ export class ReviewService {
       reviewerType: data.reviewerType,
     });
     if (existing) {
+      console.warn(`${LOG_PREFIX} Review already exists for this employee and reviewer type`, { cycleId: data.reviewCycleId, employeeId: data.employeeId, reviewerType: data.reviewerType });
       throw new AppError('CONFLICT', 'Review already exists for this employee and reviewer type', 409);
     }
 
@@ -156,6 +188,7 @@ export class ReviewService {
       status: 'pending',
     });
 
+    console.info(`${LOG_PREFIX} Review created`, { reviewId: review._id, employeeId: data.employeeId, reviewerType: data.reviewerType });
     return review;
   }
 }

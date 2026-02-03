@@ -116,6 +116,65 @@ export const ModelName =
 ### Validation
 Zod schemas in `shared/src/validators/` define the API contract. Query params use snake_case (`per_page`), model fields use camelCase (`perPage`).
 
+### Logging
+**All function calls must include proper, concise, and detailed logging for easier tracking and debugging.**
+
+Guidelines:
+- Log entry points with relevant parameters (sanitize sensitive data)
+- Log key operations and state changes
+- Log errors with context (operation, inputs, stack trace)
+- Use appropriate log levels: `info` for normal flow, `warn` for recoverable issues, `error` for failures
+- Include relevant metadata: user ID, request ID, timestamps
+- For service calls, log request/response details (URL, status, duration)
+- Avoid logging sensitive data (passwords, tokens, PII) - use `[REDACTED]` placeholder
+
+Example patterns:
+```typescript
+// Service function
+async function createGoal(data: GoalInput, userId: string) {
+  console.info('[GoalService] Creating goal', { userId, title: data.title });
+  
+  try {
+    const goal = await Goal.create({ ...data, ownerId: userId });
+    console.info('[GoalService] Goal created successfully', { goalId: goal._id, userId });
+    return goal;
+  } catch (error) {
+    console.error('[GoalService] Failed to create goal', { userId, error: error.message });
+    throw error;
+  }
+}
+
+// Inter-service call
+async function fetchEmployee(employeeId: string) {
+  const startTime = Date.now();
+  const url = `${employeeUrl}/api/v1/employees/${employeeId}`;
+  
+  console.info('[EmployeeClient] Fetching employee', { employeeId, url });
+  
+  try {
+    const response = await fetch(url);
+    const duration = Date.now() - startTime;
+    
+    if (!response.ok) {
+      console.warn('[EmployeeClient] Employee fetch failed', { 
+        employeeId, status: response.status, duration 
+      });
+      throw new Error('Employee not found');
+    }
+    
+    console.info('[EmployeeClient] Employee fetched successfully', { 
+      employeeId, duration 
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('[EmployeeClient] Employee fetch error', { 
+      employeeId, error: error.message 
+    });
+    throw error;
+  }
+}
+```
+
 ### Authentication
 JWT with access tokens (1h) and refresh tokens (7d). Middleware in `shared/src/middleware/`:
 ```typescript

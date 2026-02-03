@@ -2,6 +2,8 @@ import { ReviewForm, type ReviewFormDocument } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
 
+const LOG_PREFIX = '[ReviewFormService]';
+
 export interface CreateReviewFormDTO {
   name: string;
   description?: string;
@@ -49,6 +51,8 @@ export class ReviewFormService {
     filters: ReviewFormFilters,
     pagination: Pagination
   ): Promise<{ forms: ReviewFormDocument[]; total: number }> {
+    console.info(`${LOG_PREFIX} Listing review forms`, { filters, page: pagination.page, perPage: pagination.perPage });
+
     const query: FilterQuery<ReviewFormDocument> = {};
 
     if (filters.status) query.status = filters.status;
@@ -66,22 +70,30 @@ export class ReviewFormService {
       ReviewForm.countDocuments(query),
     ]);
 
+    console.info(`${LOG_PREFIX} Review forms listed`, { count: forms.length, total });
     return { forms, total };
   }
 
   async getReviewFormById(id: string): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Getting review form by ID`, { formId: id });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
+    console.info(`${LOG_PREFIX} Review form retrieved`, { formId: id, name: form.name, status: form.status });
     return form;
   }
 
   async createReviewForm(data: CreateReviewFormDTO): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Creating review form`, { name: data.name, sectionsCount: data.sections?.length });
+
     const existingForm = await ReviewForm.findOne({ name: data.name });
     if (existingForm) {
+      console.warn(`${LOG_PREFIX} Review form with this name already exists`, { name: data.name });
       throw new AppError('CONFLICT', 'Review form with this name already exists', 409);
     }
 
@@ -91,93 +103,123 @@ export class ReviewFormService {
       version: 1,
     });
 
+    console.info(`${LOG_PREFIX} Review form created`, { formId: form._id, name: form.name });
     return form;
   }
 
   async updateReviewForm(id: string, data: Record<string, unknown>): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Updating review form`, { formId: id, updateFields: Object.keys(data) });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     if (form.status === 'archived') {
+      console.warn(`${LOG_PREFIX} Cannot update archived form`, { formId: id, status: form.status });
       throw new AppError('CONFLICT', 'Cannot update an archived form', 409);
     }
 
     if (form.status === 'published' && (data.sections || data.name)) {
+      console.warn(`${LOG_PREFIX} Cannot modify sections of a published form`, { formId: id, status: form.status });
       throw new AppError('CONFLICT', 'Cannot modify sections of a published form. Clone the form instead.', 409);
     }
 
     if (data.name && data.name !== form.name) {
       const existingForm = await ReviewForm.findOne({ name: data.name, _id: { $ne: id } });
       if (existingForm) {
+        console.warn(`${LOG_PREFIX} Review form with this name already exists`, { name: data.name });
         throw new AppError('CONFLICT', 'Review form with this name already exists', 409);
       }
     }
 
     Object.assign(form, data);
     await form.save();
+
+    console.info(`${LOG_PREFIX} Review form updated`, { formId: id, name: form.name });
     return form;
   }
 
   async deleteReviewForm(id: string): Promise<void> {
+    console.info(`${LOG_PREFIX} Deleting review form`, { formId: id });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     if (form.status === 'published') {
+      console.warn(`${LOG_PREFIX} Cannot delete a published form`, { formId: id, status: form.status });
       throw new AppError('CONFLICT', 'Cannot delete a published form. Archive it instead.', 409);
     }
 
     await form.deleteOne();
+    console.info(`${LOG_PREFIX} Review form deleted`, { formId: id, name: form.name });
   }
 
   async publishReviewForm(id: string): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Publishing review form`, { formId: id });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     if (form.status !== 'draft') {
+      console.warn(`${LOG_PREFIX} Cannot publish form with invalid status`, { formId: id, status: form.status });
       throw new AppError('CONFLICT', `Cannot publish form with status: ${form.status}`, 409);
     }
 
     if (!form.sections || form.sections.length === 0) {
+      console.warn(`${LOG_PREFIX} Form must have at least one section`, { formId: id, sectionsCount: form.sections?.length });
       throw new AppError('VALIDATION_ERROR', 'Form must have at least one section', 422);
     }
 
     form.status = 'published';
     form.publishedAt = new Date();
     await form.save();
+
+    console.info(`${LOG_PREFIX} Review form published`, { formId: id, name: form.name, publishedAt: form.publishedAt });
     return form;
   }
 
   async archiveReviewForm(id: string): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Archiving review form`, { formId: id });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     form.status = 'archived';
     form.archivedAt = new Date();
     await form.save();
+
+    console.info(`${LOG_PREFIX} Review form archived`, { formId: id, name: form.name, archivedAt: form.archivedAt });
     return form;
   }
 
   async cloneReviewForm(id: string, newName: string): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Cloning review form`, { formId: id, newName });
+
     const originalForm = await ReviewForm.findById(id);
 
     if (!originalForm) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     const existingForm = await ReviewForm.findOne({ name: newName });
     if (existingForm) {
+      console.warn(`${LOG_PREFIX} Review form with this name already exists`, { name: newName });
       throw new AppError('CONFLICT', 'Review form with this name already exists', 409);
     }
 
@@ -193,17 +235,22 @@ export class ReviewFormService {
       version: 1,
     });
 
+    console.info(`${LOG_PREFIX} Review form cloned`, { originalFormId: id, clonedFormId: clonedForm._id, newName });
     return clonedForm;
   }
 
   async assignDepartments(id: string, departments: Array<{ department_id: string; form_type: string; effective_date?: string }>): Promise<ReviewFormDocument> {
+    console.info(`${LOG_PREFIX} Assigning departments to review form`, { formId: id, departmentsCount: departments.length });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
     if (form.status !== 'published') {
+      console.warn(`${LOG_PREFIX} Can only assign departments to published forms`, { formId: id, status: form.status });
       throw new AppError('CONFLICT', 'Can only assign departments to published forms', 409);
     }
 
@@ -213,13 +260,18 @@ export class ReviewFormService {
       effectiveDate: d.effective_date ? new Date(d.effective_date) : undefined,
     }));
     await form.save();
+
+    console.info(`${LOG_PREFIX} Departments assigned to review form`, { formId: id, assignmentsCount: form.departmentAssignments.length });
     return form;
   }
 
   async getFormVersions(id: string): Promise<ReviewFormDocument[]> {
+    console.info(`${LOG_PREFIX} Getting form versions`, { formId: id });
+
     const form = await ReviewForm.findById(id);
 
     if (!form) {
+      console.warn(`${LOG_PREFIX} Review form not found`, { formId: id });
       throw new AppError('NOT_FOUND', 'Review form not found', 404);
     }
 
@@ -231,6 +283,7 @@ export class ReviewFormService {
       ],
     }).sort({ version: -1 });
 
+    console.info(`${LOG_PREFIX} Form versions retrieved`, { formId: id, versionsCount: versions.length });
     return versions;
   }
 }

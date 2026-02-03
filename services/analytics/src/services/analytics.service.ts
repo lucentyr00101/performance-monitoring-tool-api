@@ -1,5 +1,7 @@
 import { type JwtPayload } from '@pmt/shared';
 
+const LOG_PREFIX = '[AnalyticsService]';
+
 // The analytics service aggregates data from other services
 // In a real microservices setup, it would make HTTP calls to other services
 // For simplicity, we'll simulate the aggregation logic
@@ -106,9 +108,11 @@ export class AnalyticsService {
    * Get dashboard data based on user role
    */
   async getDashboard(user: JwtPayload): Promise<DashboardData> {
+    console.info(`${LOG_PREFIX} Getting dashboard`, { userId: user.sub, role: user.role });
+    
     // In a real implementation, this would fetch data from other services
     // For now, we return mock data structure
-    return {
+    const result = {
       overview: {
         totalEmployees: 0,
         activeGoals: 0,
@@ -128,6 +132,9 @@ export class AnalyticsService {
       },
       recentActivity: [],
     };
+    
+    console.info(`${LOG_PREFIX} Dashboard retrieved`, { userId: user.sub });
+    return result;
   }
 
   /**
@@ -139,7 +146,9 @@ export class AnalyticsService {
     start_date?: Date;
     end_date?: Date;
   }): Promise<GoalAnalytics> {
-    return {
+    console.info(`${LOG_PREFIX} Getting goal analytics`, { filters });
+    
+    const result = {
       summary: {
         total: 0,
         byStatus: {},
@@ -151,6 +160,9 @@ export class AnalyticsService {
       overdueCount: 0,
       trends: [],
     };
+    
+    console.info(`${LOG_PREFIX} Goal analytics retrieved`, { totalGoals: result.summary.total });
+    return result;
   }
 
   /**
@@ -162,7 +174,9 @@ export class AnalyticsService {
     start_date?: Date;
     end_date?: Date;
   }): Promise<ReviewAnalytics> {
-    return {
+    console.info(`${LOG_PREFIX} Getting review analytics`, { filters });
+    
+    const result = {
       summary: {
         totalCycles: 0,
         activeCycles: 0,
@@ -174,26 +188,36 @@ export class AnalyticsService {
       completionRate: 0,
       byDepartment: [],
     };
+    
+    console.info(`${LOG_PREFIX} Review analytics retrieved`, { totalReviews: result.summary.totalReviews });
+    return result;
   }
 
   /**
    * Get team analytics for a manager
    */
   async getTeamAnalytics(managerId: string): Promise<TeamAnalytics> {
-    return {
+    console.info(`${LOG_PREFIX} Getting team analytics`, { managerId });
+    
+    const result = {
       teamSize: 0,
       directReports: 0,
       averagePerformanceRating: 0,
       goalCompletionRate: 0,
       members: [],
     };
+    
+    console.info(`${LOG_PREFIX} Team analytics retrieved`, { managerId, teamSize: result.teamSize });
+    return result;
   }
 
   /**
    * Get department analytics
    */
   async getDepartmentAnalytics(departmentId: string): Promise<DepartmentAnalytics> {
-    return {
+    console.info(`${LOG_PREFIX} Getting department analytics`, { departmentId });
+    
+    const result = {
       departmentId,
       departmentName: '',
       employeeCount: 0,
@@ -211,6 +235,9 @@ export class AnalyticsService {
       },
       topPerformers: [],
     };
+    
+    console.info(`${LOG_PREFIX} Department analytics retrieved`, { departmentId, employeeCount: result.employeeCount });
+    return result;
   }
 
   /**
@@ -221,12 +248,17 @@ export class AnalyticsService {
     format: 'csv' | 'json' | 'xlsx';
     filters?: Record<string, unknown>;
   }): Promise<{ url: string; expiresAt: Date }> {
+    console.info(`${LOG_PREFIX} Exporting analytics`, { type: params.type, format: params.format, filters: params.filters });
+    
     // In a real implementation, this would generate and store the export file
     // Then return a signed URL for download
-    return {
+    const result = {
       url: `/api/v1/analytics/exports/${Date.now()}`,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
     };
+    
+    console.info(`${LOG_PREFIX} Export created`, { type: params.type, format: params.format, url: result.url });
+    return result;
   }
 }
 

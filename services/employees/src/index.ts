@@ -51,9 +51,16 @@ app.notFound((c) => {
 async function start() {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
   const dbName = process.env.DB_NAME || 'employee_db';
+  const authSource = process.env.MONGO_AUTH_SOURCE || 'admin';
+  
+  // Build connection string with authSource if credentials are in URI
+  const hasCredentials = mongoUri.includes('@');
+  const connectionString = hasCredentials 
+    ? `${mongoUri}/${dbName}?authSource=${authSource}`
+    : `${mongoUri}/${dbName}`;
 
   try {
-    await mongoose.connect(`${mongoUri}/${dbName}`);
+    await mongoose.connect(connectionString);
     console.log(`✅ Connected to MongoDB: ${dbName}`);
 
     const port = parseInt(process.env.PORT || '4002');
@@ -70,5 +77,3 @@ async function start() {
 }
 
 start();
-
-export default app;

@@ -10,6 +10,8 @@ import {
 } from '@pmt/shared';
 import 'dotenv/config';
 
+const LOG_PREFIX = '[Gateway]';
+
 const app = new Hono();
 
 // Service URLs from environment
@@ -51,6 +53,14 @@ async function proxyRequest(
   const url = new URL(c.req.url);
   const targetPath = url.pathname + url.search;
   const target = `${targetUrl}${targetPath}`;
+  const startTime = Date.now();
+  const requestId = c.get('requestId');
+
+  console.info(`${LOG_PREFIX} Proxying request`, {
+    requestId,
+    method: c.req.method,
+    target,
+  });
 
   const headers: Record<string, string> = {};
   c.req.raw.headers.forEach((value: string, key: string) => {
@@ -60,7 +70,6 @@ async function proxyRequest(
   });
 
   // Add request ID
-  const requestId = c.get('requestId');
   if (requestId) {
     headers['X-Request-ID'] = requestId;
   }
@@ -76,6 +85,14 @@ async function proxyRequest(
       body,
     });
 
+    const duration = Date.now() - startTime;
+    console.info(`${LOG_PREFIX} Proxy response received`, {
+      requestId,
+      status: response.status,
+      duration,
+      target,
+    });
+
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
@@ -88,7 +105,13 @@ async function proxyRequest(
       headers: responseHeaders,
     });
   } catch (error) {
-    console.error(`Proxy error to ${target}:`, error);
+    const duration = Date.now() - startTime;
+    console.error(`${LOG_PREFIX} Proxy error`, {
+      requestId,
+      target,
+      duration,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
     return c.json(
       { 
         success: false, 
@@ -140,12 +163,10 @@ app.notFound((c) => {
 // Start server
 const port = parseInt(process.env.PORT || '4000');
 
-console.log(`🚀 API Gateway starting on port ${port}`);
-console.log(`Services:`, SERVICES);
+console.info(`${LOG_PREFIX} Starting API Gateway`, { port, services: SERVICES });
 
 serve({
   fetch: app.fetch,
   port,
 });
 
-export default app;

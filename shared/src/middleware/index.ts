@@ -4,6 +4,8 @@ import type { JwtPayload } from '../types/index.js';
 import { errorResponse, AppError } from '../utils/index.js';
 import { ERROR_CODES, USER_ROLES, type UserRole } from '../constants/index.js';
 
+const LOG_PREFIX = '[Middleware]';
+
 // Extend Hono context with user
 declare module 'hono' {
   interface ContextVariableMap {
@@ -28,26 +30,32 @@ function getJwtSecret(): string {
  */
 export async function authMiddleware(c: Context, next: Next): Promise<Response | void> {
   const authHeader = c.req.header('Authorization');
+  const requestId = c.get('requestId');
 
   if (!authHeader) {
+    console.warn(`${LOG_PREFIX} Auth failed - no header`, { requestId, path: c.req.path });
     return c.json(errorResponse(ERROR_CODES.AUTHENTICATION_ERROR, 'Authorization header required'), 401);
   }
 
   const parts = authHeader.split(' ');
   if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    console.warn(`${LOG_PREFIX} Auth failed - invalid format`, { requestId, path: c.req.path });
     return c.json(errorResponse(ERROR_CODES.AUTHENTICATION_ERROR, 'Invalid authorization format'), 401);
   }
 
   const token = parts[1];
   if (!token) {
+    console.warn(`${LOG_PREFIX} Auth failed - no token`, { requestId, path: c.req.path });
     return c.json(errorResponse(ERROR_CODES.AUTHENTICATION_ERROR, 'Token required'), 401);
   }
 
   try {
     const decoded = verify(token, getJwtSecret()) as JwtPayload;
     c.set('user', decoded);
+    console.info(`${LOG_PREFIX} Auth successful`, { requestId, userId: decoded.sub, role: decoded.role });
     await next();
   } catch {
+    console.warn(`${LOG_PREFIX} Auth failed - invalid token`, { requestId, path: c.req.path });
     return c.json(errorResponse(ERROR_CODES.AUTHENTICATION_ERROR, 'Invalid or expired token'), 401);
   }
 }
@@ -57,6 +65,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
  */
 export async function optionalAuthMiddleware(c: Context, next: Next): Promise<Response | void> {
   const authHeader = c.req.header('Authorization');
+  const requestId = c.get('requestId');
 
   if (authHeader) {
     const parts = authHeader.split(' ');
@@ -64,10 +73,15 @@ export async function optionalAuthMiddleware(c: Context, next: Next): Promise<Re
       try {
         const decoded = verify(parts[1], getJwtSecret()) as JwtPayload;
         c.set('user', decoded);
+        console.info(`${LOG_PREFIX} Optional auth - token valid`, { requestId, userId: decoded.sub, role: decoded.role });
       } catch {
-        // Token invalid but optional, continue without user
+        console.info(`${LOG_PREFIX} Optional auth - token invalid, continuing without user`, { requestId, path: c.req.path });
       }
+    } else {
+      console.info(`${LOG_PREFIX} Optional auth - invalid format, continuing without user`, { requestId, path: c.req.path });
     }
+  } else {
+    console.info(`${LOG_PREFIX} Optional auth - no token present`, { requestId, path: c.req.path });
   }
 
   await next();
@@ -79,18 +93,28 @@ export async function optionalAuthMiddleware(c: Context, next: Next): Promise<Re
 export function requireRoles(...allowedRoles: UserRole[]) {
   return async (c: Context, next: Next): Promise<Response | void> => {
     const user = c.get('user');
+    const requestId = c.get('requestId');
 
     if (!user) {
+      console.warn(`${LOG_PREFIX} Role check failed - no user`, { requestId, path: c.req.path, requiredRoles: allowedRoles });
       return c.json(errorResponse(ERROR_CODES.AUTHENTICATION_ERROR, 'Authentication required'), 401);
     }
 
     if (!allowedRoles.includes(user.role as UserRole)) {
+      console.warn(`${LOG_PREFIX} Role check failed - insufficient permissions`, { 
+        requestId, 
+        userId: user.sub, 
+        userRole: user.role, 
+        requiredRoles: allowedRoles,
+        path: c.req.path 
+      });
       return c.json(
         errorResponse(ERROR_CODES.AUTHORIZATION_ERROR, 'You do not have permission to access this resource'),
         403
       );
     }
 
+    console.info(`${LOG_PREFIX} Role check passed`, { requestId, userId: user.sub, userRole: user.role, requiredRoles: allowedRoles });
     await next();
   };
 }
@@ -124,29 +148,43 @@ export async function errorHandler(c: Context, next: Next): Promise<Response | v
   try {
     await next();
   } catch (err) {
-    console.error('Error:', err);
+    const requestId = c.get('requestId');
+    
+    console.error(`${LOG_PREFIX} Error handled`, { 
+      requestId, 
+      path: c.req.path,
+      method: c.req.method,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      errorName: err instanceof Error ? err.name : undefined,
+      stack: err instanceof Error ? err.stack : undefined
+    });
 
     if (err instanceof AppError) {
+      console.warn(`${LOG_PREFIX} AppError response`, { requestId, code: err.code, statusCode: err.statusCode });
       return c.json(errorResponse(err.code, err.message, err.details), err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
     }
 
     if (err instanceof Error) {
       // Handle Mongoose validation errors
       if (err.name === 'ValidationError') {
+        console.warn(`${LOG_PREFIX} Validation error response`, { requestId, errorName: err.name });
         return c.json(errorResponse(ERROR_CODES.VALIDATION_ERROR, err.message), 422);
       }
 
       // Handle duplicate key errors
       if (err.name === 'MongoServerError' && (err as { code?: number }).code === 11000) {
+        console.warn(`${LOG_PREFIX} Duplicate key error response`, { requestId, errorName: err.name });
         return c.json(errorResponse(ERROR_CODES.CONFLICT, 'Resource already exists'), 409);
       }
 
       // Handle cast errors (invalid ObjectId)
       if (err.name === 'CastError') {
+        console.warn(`${LOG_PREFIX} Cast error response`, { requestId, errorName: err.name });
         return c.json(errorResponse(ERROR_CODES.VALIDATION_ERROR, 'Invalid ID format'), 400);
       }
     }
 
+    console.error(`${LOG_PREFIX} Internal error response`, { requestId });
     return c.json(errorResponse(ERROR_CODES.INTERNAL_ERROR, 'Internal server error'), 500);
   }
 }
@@ -155,9 +193,16 @@ export async function errorHandler(c: Context, next: Next): Promise<Response | v
  * Request ID middleware
  */
 export async function requestIdMiddleware(c: Context, next: Next): Promise<Response | void> {
-  const requestId = c.req.header('X-Request-ID') || crypto.randomUUID();
+  const existingId = c.req.header('X-Request-ID');
+  const requestId = existingId || crypto.randomUUID();
   c.set('requestId', requestId);
   c.header('X-Request-ID', requestId);
+  console.info(`${LOG_PREFIX} Request ID assigned`, { 
+    requestId, 
+    source: existingId ? 'header' : 'generated',
+    method: c.req.method,
+    path: c.req.path 
+  });
   await next();
 }
 
@@ -205,15 +250,29 @@ export class RateLimiter {
     return async (c: Context, next: Next): Promise<Response | void> => {
       const key = c.req.header('X-Forwarded-For') || 'unknown';
       const result = this.isRateLimited(key);
+      const requestId = c.get('requestId');
 
       c.header('X-RateLimit-Limit', String(this.maxRequests));
       c.header('X-RateLimit-Remaining', String(result.remaining));
       c.header('X-RateLimit-Reset', String(Math.ceil(result.resetTime / 1000)));
 
       if (result.limited) {
+        console.warn(`${LOG_PREFIX} Rate limit exceeded`, { 
+          requestId, 
+          clientKey: key, 
+          limit: this.maxRequests,
+          resetTime: new Date(result.resetTime).toISOString(),
+          path: c.req.path 
+        });
         return c.json(errorResponse(ERROR_CODES.RATE_LIMIT_EXCEEDED, 'Too many requests'), 429);
       }
 
+      console.info(`${LOG_PREFIX} Rate limit check passed`, { 
+        requestId, 
+        clientKey: key, 
+        remaining: result.remaining, 
+        limit: this.maxRequests 
+      });
       await next();
     };
   }

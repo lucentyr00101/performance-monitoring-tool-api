@@ -8,8 +8,11 @@ import {
   parsePagination,
 } from '@pmt/shared';
 
+const LOG_PREFIX = '[AdhocReviewController]';
+
 export class AdhocReviewController {
   async list(c: Context) {
+    console.info(`${LOG_PREFIX} GET /adhoc-reviews`);
     const query = c.req.query();
 
     const parsed = adhocReviewQuerySchema.safeParse({
@@ -26,6 +29,7 @@ export class AdhocReviewController {
     });
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} List validation failed`, { errors: parsed.error.errors });
       return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
     }
 
@@ -47,6 +51,7 @@ export class AdhocReviewController {
 
     const { reviews, total } = await adhocReviewService.listAdhocReviews(filters, pagination);
 
+    console.info(`${LOG_PREFIX} List response sent`, { total });
     return c.json(successResponse(reviews, {
       pagination: {
         page: pagination.page,
@@ -59,15 +64,19 @@ export class AdhocReviewController {
 
   async getById(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /adhoc-reviews/${id}`);
     const review = await adhocReviewService.getAdhocReviewById(id);
+    console.info(`${LOG_PREFIX} GetById response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 
   async create(c: Context) {
+    console.info(`${LOG_PREFIX} POST /adhoc-reviews`);
     const body = await c.req.json();
     const parsed = createAdhocReviewSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Create validation failed`, { errors: parsed.error.errors });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -87,31 +96,40 @@ export class AdhocReviewController {
       settings: parsed.data.settings,
     });
 
+    console.info(`${LOG_PREFIX} Create response sent`, { reviewId: review._id });
     return c.json(successResponse(review), 201);
   }
 
   async delete(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} DELETE /adhoc-reviews/${id}`);
     await adhocReviewService.deleteAdhocReview(id);
+    console.info(`${LOG_PREFIX} Delete response sent`, { reviewId: id });
     return c.json(successResponse({ message: 'Ad-hoc review deleted successfully' }), 200);
   }
 
   async remind(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /adhoc-reviews/${id}/remind`);
     await adhocReviewService.sendReminder(id);
+    console.info(`${LOG_PREFIX} Remind response sent`, { reviewId: id });
     return c.json(successResponse({ message: 'Reminder sent successfully' }), 200);
   }
 
   async cancel(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /adhoc-reviews/${id}/cancel`);
     const review = await adhocReviewService.cancelAdhocReview(id);
+    console.info(`${LOG_PREFIX} Cancel response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 
   async acknowledge(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /adhoc-reviews/${id}/acknowledge`);
     const body = await c.req.json().catch(() => ({}));
     const review = await adhocReviewService.acknowledgeAdhocReview(id, body.employee_comments);
+    console.info(`${LOG_PREFIX} Acknowledge response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 }

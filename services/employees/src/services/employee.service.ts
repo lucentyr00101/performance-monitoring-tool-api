@@ -4,6 +4,8 @@ import type { FilterQuery } from 'mongoose';
 import type { z } from 'zod';
 import type { employeeQuerySchema } from '@pmt/shared';
 
+const LOG_PREFIX = '[EmployeeService]';
+
 export interface CreateEmployeeDTO {
   firstName: string;
   lastName: string;
@@ -32,6 +34,13 @@ export class EmployeeService {
   async listEmployees(
     params: EmployeeQueryParams
   ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+    console.info(`${LOG_PREFIX} Listing employees`, { 
+      page: params.page, 
+      status: params.status, 
+      departmentId: params.department_id,
+      search: params.search 
+    });
+    
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
     const query: FilterQuery<EmployeeDocument> = {};
@@ -66,6 +75,8 @@ export class EmployeeService {
       Employee.countDocuments(query),
     ]);
 
+    console.info(`${LOG_PREFIX} Listed employees`, { total, page, perPage });
+    
     return {
       employees,
       total,
@@ -77,14 +88,22 @@ export class EmployeeService {
    * Get employee by ID
    */
   async getEmployeeById(id: string): Promise<EmployeeDocument> {
+    console.info(`${LOG_PREFIX} Getting employee by ID`, { employeeId: id });
+    
     const employee = await Employee.findById(id)
       .populate('departmentId', 'name')
       .populate('managerId', 'firstName lastName jobTitle email');
 
     if (!employee) {
+      console.warn(`${LOG_PREFIX} Employee not found`, { employeeId: id });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
+    console.info(`${LOG_PREFIX} Employee retrieved`, { 
+      employeeId: id, 
+      email: employee.email 
+    });
+    
     return employee;
   }
 
@@ -92,9 +111,16 @@ export class EmployeeService {
    * Create a new employee
    */
   async createEmployee(data: CreateEmployeeDTO): Promise<EmployeeDocument> {
+    console.info(`${LOG_PREFIX} Creating employee`, { 
+      email: data.email, 
+      firstName: data.firstName, 
+      lastName: data.lastName 
+    });
+    
     // Check for duplicate email
     const existingEmployee = await Employee.findOne({ email: data.email.toLowerCase() });
     if (existingEmployee) {
+      console.warn(`${LOG_PREFIX} Employee creation failed - email exists`, { email: data.email });
       throw new AppError('CONFLICT', 'Employee with this email already exists', 409);
     }
 
@@ -103,6 +129,11 @@ export class EmployeeService {
       email: data.email.toLowerCase(),
     });
 
+    console.info(`${LOG_PREFIX} Employee created successfully`, { 
+      employeeId: employee._id.toString(), 
+      email: employee.email 
+    });
+    
     return employee.populate([
       { path: 'departmentId', select: 'name' },
       { path: 'managerId', select: 'firstName lastName' },
@@ -113,9 +144,12 @@ export class EmployeeService {
    * Update an employee
    */
   async updateEmployee(id: string, data: UpdateEmployeeDTO): Promise<EmployeeDocument> {
+    console.info(`${LOG_PREFIX} Updating employee`, { employeeId: id, fields: Object.keys(data) });
+    
     const employee = await Employee.findById(id);
 
     if (!employee) {
+      console.warn(`${LOG_PREFIX} Update failed - employee not found`, { employeeId: id });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
@@ -126,6 +160,10 @@ export class EmployeeService {
         _id: { $ne: id },
       });
       if (existingEmployee) {
+        console.warn(`${LOG_PREFIX} Update failed - email exists`, { 
+          employeeId: id, 
+          email: data.email 
+        });
         throw new AppError('CONFLICT', 'Employee with this email already exists', 409);
       }
       data.email = data.email.toLowerCase();
@@ -134,6 +172,8 @@ export class EmployeeService {
     Object.assign(employee, data);
     await employee.save();
 
+    console.info(`${LOG_PREFIX} Employee updated successfully`, { employeeId: id });
+    
     return employee.populate([
       { path: 'departmentId', select: 'name' },
       { path: 'managerId', select: 'firstName lastName' },
@@ -144,14 +184,22 @@ export class EmployeeService {
    * Delete an employee (soft delete by setting status to terminated)
    */
   async deleteEmployee(id: string): Promise<void> {
+    console.info(`${LOG_PREFIX} Deleting employee (soft)`, { employeeId: id });
+    
     const employee = await Employee.findById(id);
 
     if (!employee) {
+      console.warn(`${LOG_PREFIX} Delete failed - employee not found`, { employeeId: id });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
     employee.status = 'terminated';
     await employee.save();
+    
+    console.info(`${LOG_PREFIX} Employee deleted successfully`, { 
+      employeeId: id, 
+      email: employee.email 
+    });
   }
 
   /**
@@ -161,11 +209,14 @@ export class EmployeeService {
     managerId: string,
     params: EmployeeQueryParams
   ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+    console.info(`${LOG_PREFIX} Getting employee team`, { managerId });
+    
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
     // Verify manager exists
     const manager = await Employee.findById(managerId);
     if (!manager) {
+      console.warn(`${LOG_PREFIX} Get team failed - manager not found`, { managerId });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
@@ -181,6 +232,8 @@ export class EmployeeService {
       Employee.countDocuments({ managerId, status: { $ne: 'terminated' } }),
     ]);
 
+    console.info(`${LOG_PREFIX} Team retrieved`, { managerId, teamSize: total });
+    
     return {
       employees,
       total,
@@ -195,6 +248,8 @@ export class EmployeeService {
     departmentId: string,
     params: EmployeeQueryParams
   ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+    console.info(`${LOG_PREFIX} Getting employees by department`, { departmentId });
+    
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
     const sortField = sortBy || 'lastName';
@@ -209,6 +264,8 @@ export class EmployeeService {
       Employee.countDocuments({ departmentId, status: { $ne: 'terminated' } }),
     ]);
 
+    console.info(`${LOG_PREFIX} Department employees retrieved`, { departmentId, total });
+    
     return {
       employees,
       total,

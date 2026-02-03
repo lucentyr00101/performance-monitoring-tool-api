@@ -10,8 +10,11 @@ import {
   type JwtPayload,
 } from '@pmt/shared';
 
+const LOG_PREFIX = '[ReviewController]';
+
 export class ReviewController {
   async list(c: Context) {
+    console.info(`${LOG_PREFIX} GET /reviews`);
     const query = c.req.query();
 
     const parsed = reviewQuerySchema.safeParse({
@@ -27,6 +30,7 @@ export class ReviewController {
     });
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} List validation failed`, { errors: parsed.error.errors });
       return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
     }
 
@@ -47,6 +51,7 @@ export class ReviewController {
 
     const { reviews, total } = await reviewService.listReviews(filters, pagination);
 
+    console.info(`${LOG_PREFIX} List response sent`, { total });
     return c.json(successResponse(reviews, {
       pagination: {
         page: pagination.page,
@@ -59,17 +64,21 @@ export class ReviewController {
 
   async getById(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /reviews/${id}`);
     const review = await reviewService.getReviewById(id);
+    console.info(`${LOG_PREFIX} GetById response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 
   async update(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} PUT /reviews/${id}`);
     const body = await c.req.json();
     const parsed = updateReviewSchema.safeParse(body);
     const user = c.get('user') as JwtPayload;
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Update validation failed`, { reviewId: id, errors: parsed.error.errors });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -86,22 +95,27 @@ export class ReviewController {
       comments: parsed.data.comments,
       status: parsed.data.status,
     }, user.sub);
+    console.info(`${LOG_PREFIX} Update response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 
   async submit(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /reviews/${id}/submit`);
     const review = await reviewService.submitReview(id);
+    console.info(`${LOG_PREFIX} Submit response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 
   async acknowledge(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /reviews/${id}/acknowledge`);
     const body = await c.req.json().catch(() => ({}));
     const parsed = acknowledgeReviewSchema.safeParse(body);
     
     const employeeComments = parsed.success ? parsed.data.employee_comments : undefined;
     const review = await reviewService.acknowledgeReview(id, employeeComments);
+    console.info(`${LOG_PREFIX} Acknowledge response sent`, { reviewId: id });
     return c.json(successResponse(review), 200);
   }
 }

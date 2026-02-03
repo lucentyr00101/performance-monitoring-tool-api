@@ -8,15 +8,20 @@ import {
   employeeQuerySchema,
 } from '@pmt/shared';
 
+const LOG_PREFIX = '[EmployeeController]';
+
 export class EmployeeController {
   /**
    * GET /employees
    */
   async list(c: Context) {
+    console.info(`${LOG_PREFIX} GET /employees`);
+    
     const query = c.req.query();
     const parsed = employeeQuerySchema.safeParse(query);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} List validation failed`);
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Invalid query parameters',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -27,6 +32,8 @@ export class EmployeeController {
 
     const { employees, total, pagination } = await employeeService.listEmployees(parsed.data);
 
+    console.info(`${LOG_PREFIX} List response sent`, { total });
+    
     return c.json(successResponse(
       employees,
       {
@@ -45,7 +52,12 @@ export class EmployeeController {
    */
   async getById(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /employees/${id}`);
+    
     const employee = await employeeService.getEmployeeById(id);
+    
+    console.info(`${LOG_PREFIX} GetById response sent`, { employeeId: id });
+    
     return c.json(successResponse(employee), 200);
   }
 
@@ -53,10 +65,13 @@ export class EmployeeController {
    * POST /employees
    */
   async create(c: Context) {
+    console.info(`${LOG_PREFIX} POST /employees`);
+    
     const body = await c.req.json();
     const parsed = createEmployeeSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Create validation failed`);
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -80,6 +95,8 @@ export class EmployeeController {
       userRole: parsed.data.user_role,
     });
 
+    console.info(`${LOG_PREFIX} Create response sent`, { employeeId: employee._id.toString() });
+    
     return c.json(successResponse(employee), 201);
   }
 
@@ -88,10 +105,13 @@ export class EmployeeController {
    */
   async update(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} PUT /employees/${id}`);
+    
     const body = await c.req.json();
     const parsed = updateEmployeeSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Update validation failed`, { employeeId: id });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -114,6 +134,9 @@ export class EmployeeController {
     if (parsed.data.avatar_url !== undefined) updateData.avatarUrl = parsed.data.avatar_url;
 
     const employee = await employeeService.updateEmployee(id, updateData);
+    
+    console.info(`${LOG_PREFIX} Update response sent`, { employeeId: id });
+    
     return c.json(successResponse(employee), 200);
   }
 
@@ -122,7 +145,12 @@ export class EmployeeController {
    */
   async delete(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} DELETE /employees/${id}`);
+    
     await employeeService.deleteEmployee(id);
+    
+    console.info(`${LOG_PREFIX} Delete response sent`, { employeeId: id });
+    
     return c.json(successResponse({ message: 'Employee deleted successfully' }), 200);
   }
 
@@ -131,10 +159,13 @@ export class EmployeeController {
    */
   async getTeam(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /employees/${id}/team`);
+    
     const query = c.req.query();
     const parsed = employeeQuerySchema.safeParse(query);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} GetTeam validation failed`, { managerId: id });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Invalid query parameters',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -145,6 +176,8 @@ export class EmployeeController {
 
     const { employees, total, pagination } = await employeeService.getEmployeeTeam(id, parsed.data);
 
+    console.info(`${LOG_PREFIX} GetTeam response sent`, { managerId: id, teamSize: total });
+    
     return c.json(successResponse(
       employees,
       {

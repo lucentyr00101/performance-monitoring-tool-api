@@ -11,8 +11,11 @@ import {
   parsePagination,
 } from '@pmt/shared';
 
+const LOG_PREFIX = '[ReviewFormController]';
+
 export class ReviewFormController {
   async list(c: Context) {
+    console.info(`${LOG_PREFIX} GET /review-forms`);
     const query = c.req.query();
 
     const parsed = reviewFormQuerySchema.safeParse({
@@ -25,6 +28,7 @@ export class ReviewFormController {
     });
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} List validation failed`, { errors: parsed.error.errors });
       return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
     }
 
@@ -42,6 +46,7 @@ export class ReviewFormController {
 
     const { forms, total } = await reviewFormService.listReviewForms(filters, pagination);
 
+    console.info(`${LOG_PREFIX} List response sent`, { total });
     return c.json(successResponse(forms, {
       pagination: {
         page: pagination.page,
@@ -54,15 +59,19 @@ export class ReviewFormController {
 
   async getById(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /review-forms/${id}`);
     const form = await reviewFormService.getReviewFormById(id);
+    console.info(`${LOG_PREFIX} GetById response sent`, { formId: id });
     return c.json(successResponse(form), 200);
   }
 
   async create(c: Context) {
+    console.info(`${LOG_PREFIX} POST /review-forms`);
     const body = await c.req.json();
     const parsed = createReviewFormSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Create validation failed`, { errors: parsed.error.errors });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -97,15 +106,18 @@ export class ReviewFormController {
       createdBy: user.sub,
     });
 
+    console.info(`${LOG_PREFIX} Create response sent`, { formId: form._id });
     return c.json(successResponse(form), 201);
   }
 
   async update(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} PUT /review-forms/${id}`);
     const body = await c.req.json();
     const parsed = updateReviewFormSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Update validation failed`, { formId: id, errors: parsed.error.errors });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -138,46 +150,58 @@ export class ReviewFormController {
     if (parsed.data.settings) updateData.settings = parsed.data.settings;
 
     const form = await reviewFormService.updateReviewForm(id, updateData);
+    console.info(`${LOG_PREFIX} Update response sent`, { formId: id });
     return c.json(successResponse(form), 200);
   }
 
   async delete(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} DELETE /review-forms/${id}`);
     await reviewFormService.deleteReviewForm(id);
+    console.info(`${LOG_PREFIX} Delete response sent`, { formId: id });
     return c.json(successResponse({ message: 'Review form deleted successfully' }), 200);
   }
 
   async publish(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /review-forms/${id}/publish`);
     const form = await reviewFormService.publishReviewForm(id);
+    console.info(`${LOG_PREFIX} Publish response sent`, { formId: id });
     return c.json(successResponse(form), 200);
   }
 
   async archive(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /review-forms/${id}/archive`);
     const form = await reviewFormService.archiveReviewForm(id);
+    console.info(`${LOG_PREFIX} Archive response sent`, { formId: id });
     return c.json(successResponse(form), 200);
   }
 
   async clone(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /review-forms/${id}/clone`);
     const body = await c.req.json();
     const parsed = cloneFormSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Clone validation failed`, { formId: id });
       return c.json(errorResponse('VALIDATION_ERROR', 'Name is required for cloning'), 422);
     }
 
     const form = await reviewFormService.cloneReviewForm(id, parsed.data.name);
+    console.info(`${LOG_PREFIX} Clone response sent`, { sourceFormId: id, newFormId: form._id });
     return c.json(successResponse(form), 201);
   }
 
   async assignDepartments(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} POST /review-forms/${id}/departments`);
     const body = await c.req.json();
     const parsed = assignDepartmentsSchema.safeParse(body);
 
     if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} AssignDepartments validation failed`, { formId: id, errors: parsed.error.errors });
       return c.json(
         errorResponse('VALIDATION_ERROR', 'Validation failed',
           parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({ field: e.path.join('.'), message: e.message }))
@@ -187,12 +211,15 @@ export class ReviewFormController {
     }
 
     const form = await reviewFormService.assignDepartments(id, parsed.data.departments);
+    console.info(`${LOG_PREFIX} AssignDepartments response sent`, { formId: id, departmentCount: parsed.data.departments.length });
     return c.json(successResponse(form), 200);
   }
 
   async getVersions(c: Context) {
     const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /review-forms/${id}/versions`);
     const versions = await reviewFormService.getFormVersions(id);
+    console.info(`${LOG_PREFIX} GetVersions response sent`, { formId: id, versionCount: versions.length });
     return c.json(successResponse(versions), 200);
   }
 }
