@@ -28,10 +28,10 @@ export class AnalyticsController {
     const query = c.req.query();
     
     const filters = {
-      department_id: query.department_id,
-      employee_id: query.employee_id,
-      start_date: query.start_date ? new Date(query.start_date) : undefined,
-      end_date: query.end_date ? new Date(query.end_date) : undefined,
+      departmentId: query.department_id,
+      employeeId: query.employee_id,
+      startDate: query.start_date ? new Date(query.start_date) : undefined,
+      endDate: query.end_date ? new Date(query.end_date) : undefined,
     };
 
     const analytics = await analyticsService.getGoalAnalytics(filters);
@@ -50,10 +50,10 @@ export class AnalyticsController {
     const query = c.req.query();
 
     const filters = {
-      cycle_id: query.cycle_id,
-      department_id: query.department_id,
-      start_date: query.start_date ? new Date(query.start_date) : undefined,
-      end_date: query.end_date ? new Date(query.end_date) : undefined,
+      cycleId: query.cycle_id,
+      departmentId: query.department_id,
+      startDate: query.start_date ? new Date(query.start_date) : undefined,
+      endDate: query.end_date ? new Date(query.end_date) : undefined,
     };
 
     const analytics = await analyticsService.getReviewAnalytics(filters);

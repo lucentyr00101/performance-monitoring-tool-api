@@ -237,7 +237,7 @@ export class EmployeeController {
     
     const reviewsServiceUrl = process.env.REVIEWS_SERVICE_URL || 'http://localhost:4004';
     const queryParams = new URLSearchParams(c.req.query());
-    queryParams.set('reviewee_id', id);
+    queryParams.set('employee_id', id);
     
     try {
       const response = await fetch(`${reviewsServiceUrl}/api/v1/reviews?${queryParams.toString()}`, {

@@ -141,10 +141,10 @@ export class AnalyticsService {
    * Get goal analytics
    */
   async getGoalAnalytics(filters: {
-    department_id?: string;
-    employee_id?: string;
-    start_date?: Date;
-    end_date?: Date;
+    departmentId?: string;
+    employeeId?: string;
+    startDate?: Date;
+    endDate?: Date;
   }): Promise<GoalAnalytics> {
     console.info(`${LOG_PREFIX} Getting goal analytics`, { filters });
     
@@ -169,10 +169,10 @@ export class AnalyticsService {
    * Get review analytics
    */
   async getReviewAnalytics(filters: {
-    cycle_id?: string;
-    department_id?: string;
-    start_date?: Date;
-    end_date?: Date;
+    cycleId?: string;
+    departmentId?: string;
+    startDate?: Date;
+    endDate?: Date;
   }): Promise<ReviewAnalytics> {
     console.info(`${LOG_PREFIX} Getting review analytics`, { filters });
     
