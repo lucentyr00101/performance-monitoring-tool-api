@@ -96,6 +96,10 @@ export const employeeQuerySchema = paginationQuerySchema.extend({
   department_id: objectIdSchema.optional(),
   manager_id: objectIdSchema.optional(),
   search: z.string().optional(),
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  hire_date: optionalDateSchema,
+  department: z.string().optional(), // Department name filter
 });
 
 // Department schemas

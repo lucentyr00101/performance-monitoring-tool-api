@@ -62,14 +62,85 @@ export class EmployeeService {
       ];
     }
 
-    const sortField = sortBy || 'lastName';
+    // Map snake_case sort field to camelCase model field
+    const sortFieldMap: Record<string, string> = {
+      'first_name': 'firstName',
+      'last_name': 'lastName',
+      'job_title': 'jobTitle',
+      'hire_date': 'hireDate',
+      'employment_type': 'employmentType',
+      'created_at': 'createdAt',
+      'updated_at': 'updatedAt',
+    };
+    
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+    // Special handling for department sorting (needs aggregation)
+    if (sortBy === 'department') {
+      const pipeline: any[] = [
+        { $match: query },
+        {
+          $lookup: {
+            from: 'departments',
+            localField: 'departmentId',
+            foreignField: '_id',
+            as: 'department',
+          },
+        },
+        {
+          $lookup: {
+            from: 'employees',
+            localField: 'managerId',
+            foreignField: '_id',
+            as: 'manager',
+          },
+        },
+        {
+          $addFields: {
+            departmentName: { $arrayElemAt: ['$department.name', 0] },
+          },
+        },
+        { $sort: { departmentName: sortDirection } },
+        { $skip: skip },
+        { $limit: perPage },
+        {
+          $project: {
+            department: 0,
+            manager: 0,
+            departmentName: 0,
+          },
+        },
+      ];
+
+      const [employees, countResult] = await Promise.all([
+        Employee.aggregate(pipeline).collation({ locale: 'en', strength: 2 }),
+        Employee.countDocuments(query),
+      ]);
+
+      // Manually populate after aggregation
+      await Employee.populate(employees, [
+        { path: 'departmentId', select: 'name' },
+        { path: 'managerId', select: 'firstName lastName' },
+      ]);
+
+      console.info(`${LOG_PREFIX} Listed employees`, { total: countResult, page, perPage });
+      
+      return {
+        employees: employees as EmployeeDocument[],
+        total: countResult,
+        pagination: { page, perPage, skip, sortBy: 'department', sortOrder },
+      };
+    }
+
+    // Standard sorting for other fields
+    const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
 
     const [employees, total] = await Promise.all([
       Employee.find(query)
         .populate('departmentId', 'name')
         .populate('managerId', 'firstName lastName')
         .sort({ [sortField]: sortDirection })
+        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
         .skip(skip)
         .limit(perPage),
       Employee.countDocuments(query),
@@ -220,13 +291,24 @@ export class EmployeeService {
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
-    const sortField = sortBy || 'lastName';
+    // Map snake_case sort field to camelCase model field
+    const sortFieldMap: Record<string, string> = {
+      'first_name': 'firstName',
+      'last_name': 'lastName',
+      'job_title': 'jobTitle',
+      'hire_date': 'hireDate',
+      'employment_type': 'employmentType',
+      'created_at': 'createdAt',
+      'updated_at': 'updatedAt',
+    };
+    const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
     const [employees, total] = await Promise.all([
       Employee.find({ managerId, status: { $ne: 'terminated' } })
         .populate('departmentId', 'name')
         .sort({ [sortField]: sortDirection })
+        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
         .skip(skip)
         .limit(perPage),
       Employee.countDocuments({ managerId, status: { $ne: 'terminated' } }),
@@ -252,13 +334,24 @@ export class EmployeeService {
     
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
-    const sortField = sortBy || 'lastName';
+    // Map snake_case sort field to camelCase model field
+    const sortFieldMap: Record<string, string> = {
+      'first_name': 'firstName',
+      'last_name': 'lastName',
+      'job_title': 'jobTitle',
+      'hire_date': 'hireDate',
+      'employment_type': 'employmentType',
+      'created_at': 'createdAt',
+      'updated_at': 'updatedAt',
+    };
+    const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
     const [employees, total] = await Promise.all([
       Employee.find({ departmentId, status: { $ne: 'terminated' } })
         .populate('managerId', 'firstName lastName')
         .sort({ [sortField]: sortDirection })
+        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
         .skip(skip)
         .limit(perPage),
       Employee.countDocuments({ departmentId, status: { $ne: 'terminated' } }),
