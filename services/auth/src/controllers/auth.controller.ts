@@ -3,6 +3,7 @@ import { authService, emailService } from '@auth/services/index.js';
 import { 
   successResponse, 
   errorResponse,
+  createError,
   type JwtPayload,
 } from '@pmt/shared';
 import {
@@ -21,7 +22,14 @@ export class AuthController {
   async login(c: Context) {
     console.info(`${LOG_PREFIX} POST /auth/login`);
     
-    const body = await c.req.json();
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Login failed - invalid JSON body`);
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+    
     const parsed = loginSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -83,7 +91,14 @@ export class AuthController {
   async refresh(c: Context) {
     console.info(`${LOG_PREFIX} POST /auth/refresh`);
     
-    const body = await c.req.json();
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Refresh failed - invalid JSON body`);
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+    
     const parsed = refreshTokenSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -114,7 +129,14 @@ export class AuthController {
   async forgotPassword(c: Context) {
     console.info(`${LOG_PREFIX} POST /auth/forgot-password`);
     
-    const body = await c.req.json();
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Forgot password failed - invalid JSON body`);
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+    
     const parsed = forgotPasswordSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -148,7 +170,14 @@ export class AuthController {
   async resetPassword(c: Context) {
     console.info(`${LOG_PREFIX} POST /auth/reset-password`);
     
-    const body = await c.req.json();
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Reset password failed - invalid JSON body`);
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+    
     const parsed = resetPasswordSchema.safeParse(body);
 
     if (!parsed.success) {

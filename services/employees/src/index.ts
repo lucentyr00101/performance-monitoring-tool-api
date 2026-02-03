@@ -8,6 +8,8 @@ import {
   requestIdMiddleware,
   errorHandler,
   corsConfig,
+  errorResponse,
+  ERROR_CODES,
 } from '@pmt/shared';
 import 'dotenv/config';
 
@@ -18,6 +20,15 @@ app.use('*', cors(corsConfig));
 app.use('*', requestIdMiddleware);
 app.use('*', logger());
 app.use('*', errorHandler);
+
+// Global error handler
+app.onError((err, c) => {
+  console.error('[Employees] Uncaught error:', err);
+  const statusCode = 'statusCode' in err ? (err as { statusCode: number }).statusCode : 500;
+  const code = 'code' in err ? (err as { code: string }).code : ERROR_CODES.INTERNAL_ERROR;
+  const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+  return c.json(errorResponse(code, message), statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
+});
 
 // Health check
 app.get('/health', (c) => {
