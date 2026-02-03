@@ -1,0 +1,28 @@
+{
+  "name": "@pmt/gateway",
+  "version": "1.0.0",
+  "description": "API Gateway for PMT microservices",
+  "main": "./dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rimraf dist",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "@pmt/shared": "*",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.0",
+    "tsc-alias": "^1.8.16",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

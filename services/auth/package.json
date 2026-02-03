@@ -1,0 +1,38 @@
+{
+  "name": "@pmt/auth",
+  "version": "1.0.0",
+  "description": "Auth Service for PMT",
+  "main": "./dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rimraf dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@pmt/shared": "*",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "mongoose": "^8.9.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.0",
+    "dotenv": "^16.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "mongodb-memory-server": "^10.0.0",
+    "rimraf": "^6.0.0",
+    "tsc-alias": "^1.8.16",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,204 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: pmt-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: pmt-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-4000}:4000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4000
+      - AUTH_SERVICE_URL=http://auth:4001
+      - EMPLOYEE_SERVICE_URL=http://employees:4002
+      - GOALS_SERVICE_URL=http://goals:4003
+      - REVIEWS_SERVICE_URL=http://reviews:4004
+      - ANALYTICS_SERVICE_URL=http://analytics:4005
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+    depends_on:
+      auth:
+        condition: service_healthy
+      employees:
+        condition: service_healthy
+      goals:
+        condition: service_healthy
+      reviews:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: pmt-auth
+    restart: unless-stopped
+    ports:
+      - "${AUTH_SERVICE_PORT:-4001}:4001"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4001
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DB_NAME=${AUTH_DB_NAME:-auth_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_EXPIRY=${JWT_ACCESS_EXPIRY:-1h}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - BCRYPT_ROUNDS=${BCRYPT_ROUNDS:-12}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMPLOYEE_SERVICE_URL=http://employees:4002
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  employees:
+    build:
+      context: .
+      dockerfile: services/employees/Dockerfile
+    container_name: pmt-employees
+    restart: unless-stopped
+    ports:
+      - "${EMPLOYEE_SERVICE_PORT:-4002}:4002"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4002
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DB_NAME=${EMPLOYEE_DB_NAME:-employee_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOALS_SERVICE_URL=http://goals:4003
+      - REVIEWS_SERVICE_URL=http://reviews:4004
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  goals:
+    build:
+      context: .
+      dockerfile: services/goals/Dockerfile
+    container_name: pmt-goals
+    restart: unless-stopped
+    ports:
+      - "${GOALS_SERVICE_PORT:-4003}:4003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4003
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DB_NAME=${GOALS_DB_NAME:-goals_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - EMPLOYEE_SERVICE_URL=http://employees:4002
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  reviews:
+    build:
+      context: .
+      dockerfile: services/reviews/Dockerfile
+    container_name: pmt-reviews
+    restart: unless-stopped
+    ports:
+      - "${REVIEWS_SERVICE_PORT:-4004}:4004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4004
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DB_NAME=${REVIEWS_DB_NAME:-reviews_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - EMPLOYEE_SERVICE_URL=http://employees:4002
+      - GOALS_SERVICE_URL=http://goals:4003
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    container_name: pmt-analytics
+    restart: unless-stopped
+    ports:
+      - "${ANALYTICS_SERVICE_PORT:-4005}:4005"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4005
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DB_NAME=${ANALYTICS_DB_NAME:-analytics_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - EMPLOYEE_SERVICE_URL=http://employees:4002
+      - GOALS_SERVICE_URL=http://goals:4003
+      - REVIEWS_SERVICE_URL=http://reviews:4004
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  pmt-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
