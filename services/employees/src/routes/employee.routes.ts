@@ -28,4 +28,10 @@ employeeRoutes.delete('/:id', requireRoles('admin', 'hr'), (c) => employeeContro
 // GET /employees/:id/team - get employee's team (direct reports)
 employeeRoutes.get('/:id/team', (c) => employeeController.getTeam(c));
 
+// GET /employees/:id/goals - get employee's goals
+employeeRoutes.get('/:id/goals', (c) => employeeController.getGoals(c));
+
+// GET /employees/:id/reviews - get employee's reviews
+employeeRoutes.get('/:id/reviews', (c) => employeeController.getReviews(c));
+
 export { employeeRoutes };

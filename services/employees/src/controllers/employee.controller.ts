@@ -190,6 +190,80 @@ export class EmployeeController {
       }
     ), 200);
   }
+
+  /**
+   * GET /employees/:id/goals
+   */
+  async getGoals(c: Context) {
+    const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /employees/${id}/goals`);
+    
+    const goalsServiceUrl = process.env.GOALS_SERVICE_URL || 'http://localhost:4003';
+    const queryParams = new URLSearchParams(c.req.query());
+    queryParams.set('owner_id', id);
+    
+    try {
+      const response = await fetch(`${goalsServiceUrl}/api/v1/goals?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': c.req.header('Authorization') || '',
+          'X-Request-ID': c.get('requestId') || '',
+        },
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error(`${LOG_PREFIX} Goals service error`, { status: response.status, employeeId: id });
+        return c.json(data, response.status as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
+      }
+
+      console.info(`${LOG_PREFIX} GetGoals response sent`, { employeeId: id });
+      return c.json(data, 200);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to fetch goals`, { employeeId: id, error });
+      return c.json(
+        errorResponse('SERVICE_UNAVAILABLE', 'Goals service temporarily unavailable'),
+        503
+      );
+    }
+  }
+
+  /**
+   * GET /employees/:id/reviews
+   */
+  async getReviews(c: Context) {
+    const id = c.req.param('id');
+    console.info(`${LOG_PREFIX} GET /employees/${id}/reviews`);
+    
+    const reviewsServiceUrl = process.env.REVIEWS_SERVICE_URL || 'http://localhost:4004';
+    const queryParams = new URLSearchParams(c.req.query());
+    queryParams.set('reviewee_id', id);
+    
+    try {
+      const response = await fetch(`${reviewsServiceUrl}/api/v1/reviews?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': c.req.header('Authorization') || '',
+          'X-Request-ID': c.get('requestId') || '',
+        },
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error(`${LOG_PREFIX} Reviews service error`, { status: response.status, employeeId: id });
+        return c.json(data, response.status as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
+      }
+
+      console.info(`${LOG_PREFIX} GetReviews response sent`, { employeeId: id });
+      return c.json(data, 200);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to fetch reviews`, { employeeId: id, error });
+      return c.json(
+        errorResponse('SERVICE_UNAVAILABLE', 'Reviews service temporarily unavailable'),
+        503
+      );
+    }
+  }
 }
 
 export const employeeController = new EmployeeController();
