@@ -36,24 +36,24 @@ export class AuthService {
 
     if (!user) {
       console.warn(`${LOG_PREFIX} Login failed - user not found`, { email });
-      throw createError.authentication('Invalid email or password');
+      throw createError.invalidCredentials();
     }
 
     // Check if account is locked
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       console.warn(`${LOG_PREFIX} Login failed - account locked`, { email, lockedUntil: user.lockedUntil });
-      throw createError.authentication('Account is temporarily locked. Please try again later.');
+      throw createError.accountLocked();
     }
 
     // Check if account is suspended
     if (user.status === 'suspended') {
       console.warn(`${LOG_PREFIX} Login failed - account suspended`, { email, userId: user._id.toString() });
-      throw createError.authorization('Account has been suspended. Please contact HR.');
+      throw createError.accountSuspended();
     }
 
     if (user.status === 'inactive') {
       console.warn(`${LOG_PREFIX} Login failed - account inactive`, { email, userId: user._id.toString() });
-      throw createError.authorization('Account is inactive. Please contact HR.');
+      throw createError.authentication('Account is inactive. Please contact HR.');
     }
 
     // Verify password
@@ -78,7 +78,7 @@ export class AuthService {
       }
 
       await user.save();
-      throw createError.authentication('Invalid email or password');
+      throw createError.invalidCredentials();
     }
 
     // Reset failed attempts on successful login
@@ -154,7 +154,7 @@ export class AuthService {
       decoded = jwt.verify(refreshToken, JWT_SECRET) as { sub: string };
     } catch (error) {
       console.warn(`${LOG_PREFIX} Token refresh failed - invalid token`);
-      throw createError.authentication('Invalid or expired refresh token');
+      throw createError.tokenInvalid('Invalid or expired refresh token');
     }
 
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -168,7 +168,7 @@ export class AuthService {
 
     if (!storedToken) {
       console.warn(`${LOG_PREFIX} Token refresh failed - token not found or expired`, { userId: decoded.sub });
-      throw createError.authentication('Invalid or expired refresh token');
+      throw createError.tokenExpired('Refresh token has expired. Please login again.');
     }
 
     // Revoke old token
@@ -179,7 +179,7 @@ export class AuthService {
 
     if (!user || user.status !== 'active') {
       console.warn(`${LOG_PREFIX} Token refresh failed - user not found or inactive`, { userId: decoded.sub });
-      throw createError.authentication('User not found or inactive');
+      throw createError.authentication('User account not found or inactive');
     }
 
     console.info(`${LOG_PREFIX} Token refresh successful`, { userId: decoded.sub });
@@ -248,7 +248,7 @@ export class AuthService {
 
     if (!user) {
       console.warn(`${LOG_PREFIX} Password reset failed - invalid or expired token`);
-      throw createError.validation('Invalid or expired reset token');
+      throw createError.tokenExpired('Password reset link has expired. Please request a new one.');
     }
 
     // Hash new password
@@ -281,7 +281,7 @@ export class AuthService {
 
     if (!user) {
       console.warn(`${LOG_PREFIX} User not found`, { userId });
-      throw createError.notFound('User');
+      throw createError.resourceNotFound('User', userId);
     }
 
     console.info(`${LOG_PREFIX} User retrieved`, { userId, email: user.email, role: user.role });

@@ -143,6 +143,7 @@ export function isManagerOrAbove(user: JwtPayload | undefined): boolean {
 
 /**
  * Error handling middleware
+ * Uses property-based AppError detection for reliability across module boundaries
  */
 export async function errorHandler(c: Context, next: Next): Promise<Response | void> {
   try {
@@ -150,7 +151,7 @@ export async function errorHandler(c: Context, next: Next): Promise<Response | v
   } catch (err) {
     const requestId = c.get('requestId');
     
-    console.error(`${LOG_PREFIX} Error handled`, { 
+    console.error(`${LOG_PREFIX} Error caught`, { 
       requestId, 
       path: c.req.path,
       method: c.req.method,
@@ -159,33 +160,55 @@ export async function errorHandler(c: Context, next: Next): Promise<Response | v
       stack: err instanceof Error ? err.stack : undefined
     });
 
-    if (err instanceof AppError) {
-      console.warn(`${LOG_PREFIX} AppError response`, { requestId, code: err.code, statusCode: err.statusCode });
-      return c.json(errorResponse(err.code, err.message, err.details), err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500);
+    // Use property-based detection for AppError (works across module boundaries)
+    if (AppError.isAppError(err)) {
+      console.warn(`${LOG_PREFIX} AppError response`, { 
+        requestId, 
+        code: err.code, 
+        statusCode: err.statusCode,
+        message: err.message 
+      });
+      return c.json(
+        errorResponse(err.code, err.message, err.details), 
+        err.statusCode as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500
+      );
     }
 
     if (err instanceof Error) {
-      // Handle Mongoose validation errors
+      // Handle Mongoose validation errors with field details
       if (err.name === 'ValidationError') {
-        console.warn(`${LOG_PREFIX} Validation error response`, { requestId, errorName: err.name });
-        return c.json(errorResponse(ERROR_CODES.VALIDATION_ERROR, err.message), 422);
+        const mongooseErr = err as { errors?: Record<string, { path: string; message: string }> };
+        const details = mongooseErr.errors 
+          ? Object.values(mongooseErr.errors).map(e => ({ field: e.path, message: e.message }))
+          : undefined;
+        console.warn(`${LOG_PREFIX} Mongoose validation error`, { requestId, fields: details?.map(d => d.field) });
+        return c.json(errorResponse(ERROR_CODES.VALIDATION_ERROR, 'Validation failed', details), 422);
       }
 
-      // Handle duplicate key errors
+      // Handle duplicate key errors with field extraction
       if (err.name === 'MongoServerError' && (err as { code?: number }).code === 11000) {
-        console.warn(`${LOG_PREFIX} Duplicate key error response`, { requestId, errorName: err.name });
-        return c.json(errorResponse(ERROR_CODES.CONFLICT, 'Resource already exists'), 409);
+        const mongoErr = err as { keyPattern?: Record<string, unknown>; keyValue?: Record<string, unknown> };
+        const duplicateField = (mongoErr.keyPattern ? Object.keys(mongoErr.keyPattern)[0] : undefined) || 'field';
+        const duplicateValue = mongoErr.keyValue ? Object.values(mongoErr.keyValue)[0] : undefined;
+        const errorMessage = duplicateValue 
+          ? `${duplicateField} '${duplicateValue}' already exists`
+          : `${duplicateField} already exists`;
+        console.warn(`${LOG_PREFIX} Duplicate key error`, { requestId, field: duplicateField, value: duplicateValue });
+        return c.json(errorResponse(ERROR_CODES.ALREADY_EXISTS, errorMessage, [{ field: duplicateField, message: errorMessage }]), 409);
       }
 
       // Handle cast errors (invalid ObjectId)
       if (err.name === 'CastError') {
-        console.warn(`${LOG_PREFIX} Cast error response`, { requestId, errorName: err.name });
-        return c.json(errorResponse(ERROR_CODES.VALIDATION_ERROR, 'Invalid ID format'), 400);
+        const castErr = err as { path?: string; value?: unknown };
+        const field = castErr.path || 'id';
+        const errorMessage = `Invalid ${field} format`;
+        console.warn(`${LOG_PREFIX} Cast error`, { requestId, field, value: castErr.value });
+        return c.json(errorResponse(ERROR_CODES.INVALID_FORMAT, errorMessage, [{ field, message: errorMessage }]), 400);
       }
     }
 
-    console.error(`${LOG_PREFIX} Internal error response`, { requestId });
-    return c.json(errorResponse(ERROR_CODES.INTERNAL_ERROR, 'Internal server error'), 500);
+    console.error(`${LOG_PREFIX} Unhandled error - returning 500`, { requestId, errorType: typeof err });
+    return c.json(errorResponse(ERROR_CODES.INTERNAL_ERROR, 'An unexpected error occurred'), 500);
   }
 }
 

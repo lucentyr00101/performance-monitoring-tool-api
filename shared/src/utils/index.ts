@@ -84,8 +84,10 @@ export function createPaginationMeta(
 
 /**
  * Application Error class with error code
+ * Has isAppError property for reliable detection across module boundaries
  */
 export class AppError extends Error {
+  public readonly isAppError = true; // Marker for reliable instanceof check across module boundaries
   public readonly code: string;
   public readonly statusCode: number;
   public readonly details?: ValidationDetail[];
@@ -103,30 +105,107 @@ export class AppError extends Error {
     this.name = 'AppError';
     Error.captureStackTrace(this, this.constructor);
   }
+
+  /**
+   * Create error response object from this error
+   */
+  toResponse(): ApiResponse<never> {
+    return errorResponse(this.code, this.message, this.details);
+  }
+
+  /**
+   * Check if an error is an AppError (works across module boundaries)
+   */
+  static isAppError(err: unknown): err is AppError {
+    return (
+      err !== null &&
+      typeof err === 'object' &&
+      'isAppError' in err &&
+      (err as { isAppError: boolean }).isAppError === true &&
+      'code' in err &&
+      'statusCode' in err &&
+      'message' in err
+    );
+  }
 }
 
 /**
- * Pre-defined error creators
+ * Throw helper - simplified error throwing
+ * Usage: throw throwError('Invalid email or password', 401, 'INVALID_CREDENTIALS')
+ */
+export function throwError(
+  message: string,
+  statusCode: number = 500,
+  code: string = ERROR_CODES.INTERNAL_ERROR,
+  details?: ValidationDetail[]
+): never {
+  throw new AppError(code, message, statusCode, details);
+}
+
+/**
+ * Pre-defined error creators for common error scenarios
  */
 export const createError = {
+  // Validation errors
   validation: (message: string, details?: ValidationDetail[]) =>
     new AppError(ERROR_CODES.VALIDATION_ERROR, message, 422, details),
+  
+  badRequest: (message: string, details?: ValidationDetail[]) =>
+    new AppError(ERROR_CODES.BAD_REQUEST, message, 400, details),
+  
+  fieldRequired: (field: string) =>
+    new AppError(ERROR_CODES.FIELD_REQUIRED, `${field} is required`, 400, [{ field, message: `${field} is required` }]),
+  
+  invalidFormat: (field: string, message?: string) =>
+    new AppError(ERROR_CODES.INVALID_FORMAT, message || `Invalid ${field} format`, 400, [{ field, message: message || `Invalid ${field} format` }]),
 
+  // Authentication errors
   authentication: (message: string = 'Authentication required') =>
     new AppError(ERROR_CODES.AUTHENTICATION_ERROR, message, 401),
+  
+  invalidCredentials: (message: string = 'Invalid email or password') =>
+    new AppError(ERROR_CODES.INVALID_CREDENTIALS, message, 401),
+  
+  tokenExpired: (message: string = 'Token has expired') =>
+    new AppError(ERROR_CODES.TOKEN_EXPIRED, message, 401),
+  
+  tokenInvalid: (message: string = 'Invalid token') =>
+    new AppError(ERROR_CODES.TOKEN_INVALID, message, 401),
+  
+  accountLocked: (message: string = 'Account is temporarily locked. Please try again later.') =>
+    new AppError(ERROR_CODES.ACCOUNT_LOCKED, message, 401),
+  
+  accountSuspended: (message: string = 'Account is suspended. Please contact support.') =>
+    new AppError(ERROR_CODES.ACCOUNT_SUSPENDED, message, 401),
 
+  // Authorization errors
   authorization: (message: string = 'Access denied') =>
     new AppError(ERROR_CODES.AUTHORIZATION_ERROR, message, 403),
+  
+  insufficientPermissions: (message: string = 'Insufficient permissions') =>
+    new AppError(ERROR_CODES.INSUFFICIENT_PERMISSIONS, message, 403),
 
+  // Resource errors
   notFound: (resource: string = 'Resource') =>
     new AppError(ERROR_CODES.NOT_FOUND, `${resource} not found`, 404),
+  
+  resourceNotFound: (resource: string, id?: string) =>
+    new AppError(ERROR_CODES.RESOURCE_NOT_FOUND, id ? `${resource} with ID '${id}' not found` : `${resource} not found`, 404),
 
   conflict: (message: string) =>
     new AppError(ERROR_CODES.CONFLICT, message, 409),
+  
+  alreadyExists: (resource: string, field?: string) =>
+    new AppError(ERROR_CODES.ALREADY_EXISTS, field ? `${resource} with this ${field} already exists` : `${resource} already exists`, 409),
+  
+  emailTaken: (email?: string) =>
+    new AppError(ERROR_CODES.EMAIL_TAKEN, email ? `Email '${email}' is already registered` : 'Email is already registered', 409),
 
-  rateLimitExceeded: () =>
-    new AppError(ERROR_CODES.RATE_LIMIT_EXCEEDED, 'Too many requests', 429),
+  // Rate limiting
+  rateLimitExceeded: (message: string = 'Too many requests. Please try again later.') =>
+    new AppError(ERROR_CODES.RATE_LIMIT_EXCEEDED, message, 429),
 
+  // Internal errors
   internal: (message: string = 'Internal server error') =>
     new AppError(ERROR_CODES.INTERNAL_ERROR, message, 500),
 };

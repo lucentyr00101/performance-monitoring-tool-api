@@ -93,11 +93,57 @@ All endpoints return this structure:
 
 Use utilities from shared:
 ```typescript
-import { successResponse, errorResponse, AppError } from '@pmt/shared';
+import { successResponse, errorResponse, AppError, createError } from '@pmt/shared';
 
 return c.json(successResponse(data), 200);
-throw new AppError('NOT_FOUND', 'Resource not found', 404);
+throw createError.notFound('User'); // Throws with code: NOT_FOUND, status: 404
 ```
+
+### Error Handling
+**All errors must be descriptive and actionable for the UI.**
+
+Use the `createError` factory for consistent error responses:
+```typescript
+import { createError } from '@pmt/shared';
+
+// Authentication errors
+throw createError.invalidCredentials();           // 401 - "Invalid email or password"
+throw createError.accountLocked();                // 401 - "Account is temporarily locked..."
+throw createError.accountSuspended();             // 401 - "Account is suspended..."
+throw createError.tokenExpired('Session expired'); // 401 - Custom message
+
+// Authorization errors
+throw createError.authorization();                // 403 - "Access denied"
+throw createError.insufficientPermissions();      // 403 - "Insufficient permissions"
+
+// Resource errors
+throw createError.notFound('User');               // 404 - "User not found"
+throw createError.resourceNotFound('Goal', id);   // 404 - "Goal with ID 'xxx' not found"
+throw createError.alreadyExists('User', 'email'); // 409 - "User with this email already exists"
+throw createError.emailTaken();                   // 409 - "Email is already registered"
+
+// Validation errors
+throw createError.validation('Invalid input', [
+  { field: 'email', message: 'Must be a valid email' }
+]); // 422 with field details
+throw createError.fieldRequired('title');         // 400 - "title is required"
+throw createError.invalidFormat('date', 'Must be ISO 8601'); // 400 with details
+```
+
+Error response shape (returned to UI):
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Invalid email or password",
+    "details": [{ "field": "password", "message": "Password is incorrect" }]
+  },
+  "meta": { "timestamp": "2024-..." }
+}
+```
+
+Available error codes: `VALIDATION_ERROR`, `BAD_REQUEST`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `TOKEN_INVALID`, `ACCOUNT_LOCKED`, `ACCOUNT_SUSPENDED`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `INSUFFICIENT_PERMISSIONS`, `NOT_FOUND`, `RESOURCE_NOT_FOUND`, `CONFLICT`, `ALREADY_EXISTS`, `EMAIL_TAKEN`, `RATE_LIMIT_EXCEEDED`, `FIELD_REQUIRED`, `INVALID_FORMAT`, `INVALID_VALUE`, `INTERNAL_ERROR`
 
 ### Mongoose Models
 Use this pattern to prevent "Cannot overwrite model" errors in tests:
