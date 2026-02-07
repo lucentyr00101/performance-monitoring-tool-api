@@ -166,8 +166,8 @@ export class AdhocReviewService {
     return review;
   }
 
-  async acknowledgeAdhocReview(id: string, employeeComments?: string): Promise<AdhocReviewDocument> {
-    console.info(`${LOG_PREFIX} Acknowledging ad-hoc review`, { reviewId: id, hasComments: !!employeeComments });
+  async acknowledgeAdhocReview(id: string, comments?: string): Promise<AdhocReviewDocument> {
+    console.info(`${LOG_PREFIX} Acknowledging ad-hoc review`, { reviewId: id, hasComments: !!comments });
 
     const review = await AdhocReview.findById(id);
 
@@ -181,15 +181,120 @@ export class AdhocReviewService {
       throw new AppError('CONFLICT', 'Review is not pending acknowledgment', 409);
     }
 
-    review.status = 'completed';
+    review.status = 'acknowledged';
     review.acknowledgedAt = new Date();
-    if (employeeComments) {
-      review.employeeComments = employeeComments;
+    if (comments) {
+      review.acknowledgmentComments = comments;
+      review.employeeComments = comments;
     }
     await review.save();
 
     console.info(`${LOG_PREFIX} Ad-hoc review acknowledged`, { reviewId: id, acknowledgedAt: review.acknowledgedAt });
     return review;
+  }
+
+  /**
+   * Submit self-review for an adhoc review.
+   * Only the assigned employee should call this.
+   */
+  async submitSelfReview(
+    id: string,
+    answers: { questionId: string; value: string | number | boolean | string[] }[],
+    submissionStatus: 'submitted' | 'in_progress',
+  ): Promise<AdhocReviewDocument> {
+    console.info(`${LOG_PREFIX} Submitting self-review`, { reviewId: id, answerCount: answers.length, submissionStatus });
+
+    const review = await AdhocReview.findById(id);
+
+    if (!review) {
+      console.warn(`${LOG_PREFIX} Ad-hoc review not found`, { reviewId: id });
+      throw new AppError('NOT_FOUND', 'Ad-hoc review not found', 404);
+    }
+
+    const invalidStatuses = ['completed', 'cancelled', 'acknowledged', 'pending_acknowledgment'];
+    if (invalidStatuses.includes(review.status)) {
+      console.warn(`${LOG_PREFIX} Cannot submit self-review in current status`, { reviewId: id, status: review.status });
+      throw new AppError('CONFLICT', `Cannot submit self-review when review is ${review.status}`, 409);
+    }
+
+    review.selfReview = {
+      status: submissionStatus,
+      submittedAt: submissionStatus === 'submitted' ? new Date() : undefined,
+      answers,
+    };
+
+    if (submissionStatus === 'submitted') {
+      review.status = this.computeNextStatus(review, 'self');
+    } else {
+      review.status = 'self_review_pending';
+    }
+
+    await review.save();
+
+    console.info(`${LOG_PREFIX} Self-review submitted`, { reviewId: id, newStatus: review.status });
+    return review;
+  }
+
+  /**
+   * Submit manager review for an adhoc review.
+   * Only the assigned manager should call this.
+   */
+  async submitManagerReview(
+    id: string,
+    answers: { questionId: string; value: string | number | boolean | string[] }[],
+    submissionStatus: 'submitted' | 'in_progress',
+  ): Promise<AdhocReviewDocument> {
+    console.info(`${LOG_PREFIX} Submitting manager review`, { reviewId: id, answerCount: answers.length, submissionStatus });
+
+    const review = await AdhocReview.findById(id);
+
+    if (!review) {
+      console.warn(`${LOG_PREFIX} Ad-hoc review not found`, { reviewId: id });
+      throw new AppError('NOT_FOUND', 'Ad-hoc review not found', 404);
+    }
+
+    const invalidStatuses = ['completed', 'cancelled', 'acknowledged', 'pending_acknowledgment'];
+    if (invalidStatuses.includes(review.status)) {
+      console.warn(`${LOG_PREFIX} Cannot submit manager review in current status`, { reviewId: id, status: review.status });
+      throw new AppError('CONFLICT', `Cannot submit manager review when review is ${review.status}`, 409);
+    }
+
+    review.managerReview = {
+      status: submissionStatus,
+      submittedAt: submissionStatus === 'submitted' ? new Date() : undefined,
+      answers,
+    };
+
+    if (submissionStatus === 'submitted') {
+      review.status = this.computeNextStatus(review, 'manager');
+    } else {
+      review.status = 'manager_review_pending';
+    }
+
+    await review.save();
+
+    console.info(`${LOG_PREFIX} Manager review submitted`, { reviewId: id, newStatus: review.status });
+    return review;
+  }
+
+  /**
+   * Compute the next status based on which reviews are required and submitted.
+   */
+  private computeNextStatus(
+    review: AdhocReviewDocument,
+    justSubmitted: 'self' | 'manager',
+  ): AdhocReviewDocument['status'] {
+    const selfRequired = review.settings?.selfReviewRequired ?? true;
+    const managerRequired = review.settings?.managerReviewRequired ?? true;
+
+    const selfDone = review.selfReview?.status === 'submitted' || justSubmitted === 'self';
+    const managerDone = review.managerReview?.status === 'submitted' || justSubmitted === 'manager';
+
+    if (selfRequired && !selfDone) return 'self_review_pending';
+    if (managerRequired && !managerDone) return 'manager_review_pending';
+
+    // All required reviews are done
+    return 'pending_acknowledgment';
   }
 }
 

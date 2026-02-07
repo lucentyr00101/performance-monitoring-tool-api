@@ -34,6 +34,7 @@ services:
       - GOALS_SERVICE_URL=http://goals:4003
       - REVIEWS_SERVICE_URL=http://reviews:4004
       - ANALYTICS_SERVICE_URL=http://analytics:4005
+      - NOTIFICATIONS_SERVICE_URL=http://notifications:4006
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
     depends_on:
@@ -46,6 +47,8 @@ services:
       reviews:
         condition: service_healthy
       analytics:
+        condition: service_healthy
+      notifications:
         condition: service_healthy
     networks:
       - pmt-network
@@ -192,6 +195,31 @@ services:
       - pmt-network
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://localhost:4005/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  notifications:
+    build:
+      context: .
+      dockerfile: services/notifications/Dockerfile
+    container_name: pmt-notifications
+    restart: unless-stopped
+    ports:
+      - "${NOTIFICATIONS_SERVICE_PORT:-4006}:4006"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=4006
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongodb:27017
+      - DB_NAME=${NOTIFICATION_DB_NAME:-notification_db}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - pmt-network
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:4006/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

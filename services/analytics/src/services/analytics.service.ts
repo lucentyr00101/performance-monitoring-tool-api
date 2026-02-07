@@ -1,6 +1,11 @@
 import { type JwtPayload } from '@pmt/shared';
+import type { IKpiData } from '@pmt/shared';
 
 const LOG_PREFIX = '[AnalyticsService]';
+
+const GOALS_SERVICE_URL = process.env.GOALS_SERVICE_URL || 'http://localhost:4003';
+const REVIEWS_SERVICE_URL = process.env.REVIEWS_SERVICE_URL || 'http://localhost:4004';
+const EMPLOYEE_SERVICE_URL = process.env.EMPLOYEE_SERVICE_URL || 'http://localhost:4002';
 
 // The analytics service aggregates data from other services
 // In a real microservices setup, it would make HTTP calls to other services
@@ -259,6 +264,92 @@ export class AnalyticsService {
     
     console.info(`${LOG_PREFIX} Export created`, { type: params.type, format: params.format, url: result.url });
     return result;
+  }
+
+  /**
+   * Get KPI data with optional period and department filters.
+   * Aggregates data from goals, reviews, and employees services.
+   */
+  async getKpis(filters: {
+    period?: string;
+    department?: string;
+  }, authHeader?: string): Promise<IKpiData> {
+    console.info(`${LOG_PREFIX} Getting KPIs`, { filters });
+
+    const headers: Record<string, string> = {};
+    if (authHeader) headers['Authorization'] = authHeader;
+
+    const [goalsData, reviewsData, employeesData] = await Promise.all([
+      this.fetchServiceData(`${GOALS_SERVICE_URL}/api/v1/goals?per_page=100`, headers),
+      this.fetchServiceData(`${REVIEWS_SERVICE_URL}/api/v1/reviews?per_page=100`, headers),
+      this.fetchServiceData(`${EMPLOYEE_SERVICE_URL}/api/v1/employees?per_page=1`, headers),
+    ]);
+
+    const goals = (goalsData?.data as Array<{ status?: string }>) ?? [];
+    const reviews = (reviewsData?.data as Array<{ status?: string; rating?: number }>) ?? [];
+
+    const totalGoals = goals.length;
+    const completedGoals = goals.filter((g) => g.status === 'completed').length;
+    const goalsCompletionRate = totalGoals > 0 ? completedGoals / totalGoals : 0;
+
+    const totalReviews = reviews.length;
+    const submittedReviews = reviews.filter((r) => r.status === 'submitted' || r.status === 'acknowledged').length;
+    const reviewCompletionRate = totalReviews > 0 ? submittedReviews / totalReviews : 0;
+
+    const ratingsWithValues = reviews.filter((r) => typeof r.rating === 'number');
+    const averagePerformanceScore =
+      ratingsWithValues.length > 0
+        ? ratingsWithValues.reduce((sum, r) => sum + (r.rating ?? 0), 0) / ratingsWithValues.length
+        : 0;
+
+    const employeeCount = employeesData?.meta?.pagination?.total_items ?? 0;
+    const activeReviewCycles = 0; // Would require a separate call to review-cycles
+
+    const result: IKpiData = {
+      averagePerformanceScore: Math.round(averagePerformanceScore * 100) / 100,
+      goalsCompletionRate: Math.round(goalsCompletionRate * 100) / 100,
+      reviewCompletionRate: Math.round(reviewCompletionRate * 100) / 100,
+      employeeCount,
+      activeReviewCycles,
+      trends: {
+        performanceScore: [averagePerformanceScore],
+        goalsCompletion: [goalsCompletionRate],
+      },
+    };
+
+    console.info(`${LOG_PREFIX} KPIs retrieved`, { ...result, trends: '[omitted]' });
+    return result;
+  }
+
+  /**
+   * Fetch data from another service. Returns null on failure.
+   */
+  private async fetchServiceData(
+    url: string,
+    headers: Record<string, string>,
+  ): Promise<{ data?: unknown[]; meta?: { pagination?: { total_items?: number } } } | null> {
+    const startTime = Date.now();
+    try {
+      const response = await fetch(url, { headers });
+      const duration = Date.now() - startTime;
+
+      if (!response.ok) {
+        console.warn(`${LOG_PREFIX} Service call failed`, { url, status: response.status, duration });
+        return null;
+      }
+
+      const body = await response.json();
+      console.info(`${LOG_PREFIX} Service call success`, { url, duration });
+      return body as { data?: unknown[]; meta?: { pagination?: { total_items?: number } } };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.error(`${LOG_PREFIX} Service call error`, {
+        url,
+        error: error instanceof Error ? error.message : String(error),
+        duration,
+      });
+      return null;
+    }
   }
 }
 

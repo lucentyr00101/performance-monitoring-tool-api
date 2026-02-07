@@ -23,6 +23,7 @@ const SERVICES = {
   goals: process.env.GOALS_SERVICE_URL || 'http://localhost:4003',
   reviews: process.env.REVIEWS_SERVICE_URL || 'http://localhost:4004',
   analytics: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:4005',
+  notifications: process.env.NOTIFICATIONS_SERVICE_URL || 'http://localhost:4006',
 };
 
 // Rate limiter
@@ -155,6 +156,9 @@ app.all('/api/v1/review-forms/*', (c) => proxyRequest(c, SERVICES.reviews));
 
 // Analytics routes
 app.all('/api/v1/analytics/*', (c) => proxyRequest(c, SERVICES.analytics));
+
+// Notification routes
+app.all('/api/v1/notifications/*', (c) => proxyRequest(c, SERVICES.notifications));
 
 // 404 for unknown routes
 app.notFound((c) => {

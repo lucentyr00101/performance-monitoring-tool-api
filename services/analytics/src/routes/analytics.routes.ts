@@ -25,4 +25,7 @@ analyticsRoutes.get('/department/:id', requireRoles('admin', 'hr', 'manager'), (
 // Export analytics (admin, hr only)
 analyticsRoutes.post('/export', requireRoles('admin', 'hr'), (c) => analyticsController.exportAnalytics(c));
 
+// KPI data
+analyticsRoutes.get('/kpis', (c) => analyticsController.getKpis(c));
+
 export { analyticsRoutes };

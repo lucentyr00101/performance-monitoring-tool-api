@@ -5,7 +5,11 @@ import {
   errorResponse,
   createAdhocReviewSchema,
   adhocReviewQuerySchema,
+  submitAdhocReviewSchema,
+  acknowledgeAdhocReviewSchema,
   parsePagination,
+  createError,
+  type JwtPayload,
 } from '@pmt/shared';
 
 const LOG_PREFIX = '[AdhocReviewController]';
@@ -128,9 +132,130 @@ export class AdhocReviewController {
     const id = c.req.param('id');
     console.info(`${LOG_PREFIX} POST /adhoc-reviews/${id}/acknowledge`);
     const body = await c.req.json().catch(() => ({}));
-    const review = await adhocReviewService.acknowledgeAdhocReview(id, body.employee_comments);
+
+    const parsed = acknowledgeAdhocReviewSchema.safeParse(body);
+    const comments = parsed.success ? parsed.data.comments : body.employee_comments;
+
+    const review = await adhocReviewService.acknowledgeAdhocReview(id, comments);
+
     console.info(`${LOG_PREFIX} Acknowledge response sent`, { reviewId: id });
-    return c.json(successResponse(review), 200);
+    return c.json(successResponse({
+      id: review._id?.toString() ?? review.id,
+      status: review.status,
+      acknowledgedAt: review.acknowledgedAt?.toISOString() ?? null,
+    }), 200);
+  }
+
+  async submitSelfReview(c: Context) {
+    const id = c.req.param('id');
+    const user = c.get('user') as JwtPayload;
+    console.info(`${LOG_PREFIX} PUT /adhoc-reviews/${id}/self-review`, { userId: user.sub });
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+
+    const parsed = submitAdhocReviewSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Self-review validation failed`, { errors: parsed.error.errors });
+      return c.json(
+        errorResponse('VALIDATION_ERROR', 'Validation failed',
+          parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          }))
+        ),
+        422
+      );
+    }
+
+    // Authorization: only the assigned employee can submit self-review
+    const existing = await adhocReviewService.getAdhocReviewById(id);
+    if (user.employeeId && existing.employeeId.toString() !== user.employeeId) {
+      console.warn(`${LOG_PREFIX} Self-review authorization failed`, {
+        reviewId: id,
+        userId: user.sub,
+        employeeId: user.employeeId,
+        reviewEmployeeId: existing.employeeId.toString(),
+      });
+      throw createError.authorization('Only the assigned employee can submit a self-review');
+    }
+
+    const review = await adhocReviewService.submitSelfReview(
+      id,
+      parsed.data.answers,
+      parsed.data.status,
+    );
+
+    console.info(`${LOG_PREFIX} Self-review response sent`, { reviewId: id, status: review.status });
+    return c.json(successResponse({
+      id: review._id?.toString() ?? review.id,
+      status: review.status,
+      selfReview: review.selfReview ? {
+        status: review.selfReview.status,
+        submittedAt: review.selfReview.submittedAt?.toISOString() ?? null,
+        answers: review.selfReview.answers,
+      } : null,
+    }), 200);
+  }
+
+  async submitManagerReview(c: Context) {
+    const id = c.req.param('id');
+    const user = c.get('user') as JwtPayload;
+    console.info(`${LOG_PREFIX} PUT /adhoc-reviews/${id}/manager-review`, { userId: user.sub });
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+
+    const parsed = submitAdhocReviewSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Manager review validation failed`, { errors: parsed.error.errors });
+      return c.json(
+        errorResponse('VALIDATION_ERROR', 'Validation failed',
+          parsed.error.errors.map((e: { path: (string | number)[]; message: string }) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          }))
+        ),
+        422
+      );
+    }
+
+    // Authorization: only the assigned manager can submit manager review
+    const existing = await adhocReviewService.getAdhocReviewById(id);
+    if (user.employeeId && existing.managerId && existing.managerId.toString() !== user.employeeId) {
+      console.warn(`${LOG_PREFIX} Manager review authorization failed`, {
+        reviewId: id,
+        userId: user.sub,
+        employeeId: user.employeeId,
+        reviewManagerId: existing.managerId.toString(),
+      });
+      throw createError.authorization('Only the assigned manager can submit a manager review');
+    }
+
+    const review = await adhocReviewService.submitManagerReview(
+      id,
+      parsed.data.answers,
+      parsed.data.status,
+    );
+
+    console.info(`${LOG_PREFIX} Manager review response sent`, { reviewId: id, status: review.status });
+    return c.json(successResponse({
+      id: review._id?.toString() ?? review.id,
+      status: review.status,
+      managerReview: review.managerReview ? {
+        status: review.managerReview.status,
+        submittedAt: review.managerReview.submittedAt?.toISOString() ?? null,
+        answers: review.managerReview.answers,
+      } : null,
+    }), 200);
   }
 }
 

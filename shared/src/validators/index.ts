@@ -252,7 +252,11 @@ export const createAdhocReviewSchema = z.object({
 });
 
 export const adhocReviewQuerySchema = paginationQuerySchema.extend({
-  status: z.enum(['initiated', 'pending_acknowledgment', 'completed', 'cancelled']).optional(),
+  status: z.enum([
+    'initiated', 'self_review_pending', 'self_review_submitted',
+    'manager_review_pending', 'manager_review_submitted',
+    'pending_acknowledgment', 'acknowledged', 'completed', 'cancelled',
+  ]).optional(),
   employee_id: objectIdSchema.optional(),
   manager_id: objectIdSchema.optional(),
   triggered_by: objectIdSchema.optional(),
@@ -334,6 +338,11 @@ export const analyticsQuerySchema = z.object({
   department_id: objectIdSchema.optional(),
 });
 
+export const kpiQuerySchema = z.object({
+  period: z.enum(['monthly', 'quarterly', 'yearly']).default('monthly'),
+  department: objectIdSchema.optional(),
+});
+
 export const exportQuerySchema = z.object({
   type: z.enum(['goals', 'reviews', 'employees']),
   format: z.enum(['csv', 'xlsx', 'pdf']).default('csv'),
@@ -341,6 +350,48 @@ export const exportQuerySchema = z.object({
   year: z.coerce.number().int().optional(),
   quarter: z.coerce.number().int().min(1).max(4).optional(),
   department_id: objectIdSchema.optional(),
+});
+
+// Notification schemas
+export const notificationQuerySchema = paginationQuerySchema.extend({
+  type: z.enum([
+    'review_assigned', 'review_completed', 'review_reminder',
+    'goal_updated', 'goal_due', 'system', 'announcement',
+  ]).optional(),
+  status: z.enum(['unread', 'read', 'all']).default('all'),
+});
+
+export const createNotificationSchema = z.object({
+  user_id: objectIdSchema,
+  type: z.enum([
+    'review_assigned', 'review_completed', 'review_reminder',
+    'goal_updated', 'goal_due', 'system', 'announcement',
+  ]),
+  title: z.string().min(1).max(255),
+  message: z.string().min(1).max(1000),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+  action_url: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+// Adhoc review submission schemas
+export const reviewAnswerSchema = z.object({
+  questionId: objectIdSchema,
+  value: z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+  ]),
+});
+
+export const submitAdhocReviewSchema = z.object({
+  answers: z.array(reviewAnswerSchema).min(1, 'At least one answer is required'),
+  status: z.enum(['submitted', 'in_progress']).default('submitted'),
+});
+
+export const acknowledgeAdhocReviewSchema = z.object({
+  comments: z.string().max(2000).optional(),
 });
 
 // Type exports
@@ -362,3 +413,8 @@ export type UpdateReviewInput = z.infer<typeof updateReviewSchema>;
 export type CreateAdhocReviewInput = z.infer<typeof createAdhocReviewSchema>;
 export type CreateReviewFormInput = z.infer<typeof createReviewFormSchema>;
 export type UpdateReviewFormInput = z.infer<typeof updateReviewFormSchema>;
+export type KpiQueryInput = z.infer<typeof kpiQuerySchema>;
+export type NotificationQueryInput = z.infer<typeof notificationQuerySchema>;
+export type CreateNotificationInput = z.infer<typeof createNotificationSchema>;
+export type SubmitAdhocReviewInput = z.infer<typeof submitAdhocReviewSchema>;
+export type AcknowledgeAdhocReviewInput = z.infer<typeof acknowledgeAdhocReviewSchema>;

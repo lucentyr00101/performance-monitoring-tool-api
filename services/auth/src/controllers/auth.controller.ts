@@ -12,6 +12,12 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
 } from '@pmt/shared';
+import {
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  getRefreshTokenFromCookie,
+} from '@auth/utils/cookie.js';
+import { fetchEmployeeById } from '@auth/utils/employee-client.js';
 
 const LOG_PREFIX = '[AuthController]';
 
@@ -47,16 +53,25 @@ export class AuthController {
     const { email, password } = parsed.data;
     const { tokens, user } = await authService.login(email, password);
 
-    // Fetch employee data if available (would need to call employee service)
+    // Fetch full employee data from employee service
+    let employeeData = null;
+    if (user.employeeId) {
+      const authHeader = c.req.header('Authorization');
+      employeeData = await fetchEmployeeById(user.employeeId.toString(), authHeader ?? undefined);
+      if (!employeeData) {
+        employeeData = { id: user.employeeId.toString() };
+      }
+    }
+
     const userData = {
       id: user._id.toString(),
       email: user.email,
       role: user.role,
-      employee: user.employeeId ? {
-        id: user.employeeId.toString(),
-        // Note: Full employee data would come from employee service
-      } : null,
+      employee: employeeData,
     };
+
+    // Set refresh token as httpOnly cookie
+    setRefreshTokenCookie(c, tokens.refreshToken);
 
     console.info(`${LOG_PREFIX} Login response sent`, { userId: user._id.toString() });
     
@@ -78,6 +93,9 @@ export class AuthController {
     
     await authService.logout(user.sub);
 
+    // Clear refresh token cookie
+    clearRefreshTokenCookie(c);
+
     console.info(`${LOG_PREFIX} Logout response sent`, { userId: user.sub });
     
     return c.json(successResponse({
@@ -91,27 +109,32 @@ export class AuthController {
   async refresh(c: Context) {
     console.info(`${LOG_PREFIX} POST /auth/refresh`);
     
-    let body: unknown;
+    // Try to get refresh token from body first, then fall back to cookie
+    let refreshToken: string | null = null;
+
     try {
-      body = await c.req.json();
+      const body = await c.req.json();
+      const parsed = refreshTokenSchema.safeParse(body);
+      if (parsed.success) {
+        refreshToken = parsed.data.refresh_token;
+      }
     } catch (e) {
-      console.warn(`${LOG_PREFIX} Refresh failed - invalid JSON body`);
-      throw createError.badRequest('Invalid JSON in request body');
-    }
-    
-    const parsed = refreshTokenSchema.safeParse(body);
-
-    if (!parsed.success) {
-      console.warn(`${LOG_PREFIX} Refresh validation failed`);
-      return c.json(
-        errorResponse('VALIDATION_ERROR', 'Validation failed',
-          parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
-        ),
-        422
-      );
+      // Body parsing failed — try cookie fallback
     }
 
-    const tokens = await authService.refreshAccessToken(parsed.data.refresh_token);
+    if (!refreshToken) {
+      refreshToken = getRefreshTokenFromCookie(c);
+    }
+
+    if (!refreshToken) {
+      console.warn(`${LOG_PREFIX} Refresh failed - no token provided`);
+      throw createError.badRequest('Refresh token is required (body or cookie)');
+    }
+
+    const tokens = await authService.refreshAccessToken(refreshToken);
+
+    // Set new refresh token cookie
+    setRefreshTokenCookie(c, tokens.refreshToken);
 
     console.info(`${LOG_PREFIX} Token refresh response sent`);
     
@@ -208,17 +231,23 @@ export class AuthController {
     
     const user = await authService.getCurrentUser(jwtUser.sub);
 
-    // Build response (employee data would come from employee service)
+    // Fetch full employee data from employee service
+    let employeeData = null;
+    if (user.employeeId) {
+      const authHeader = c.req.header('Authorization');
+      employeeData = await fetchEmployeeById(user.employeeId.toString(), authHeader ?? undefined);
+      if (!employeeData) {
+        employeeData = { id: user.employeeId.toString() };
+      }
+    }
+
     const response = {
       id: user._id.toString(),
       email: user.email,
       role: user.role,
       status: user.status,
       last_login_at: user.lastLoginAt?.toISOString() || null,
-      employee: user.employeeId ? {
-        id: user.employeeId.toString(),
-        // Full employee data would be fetched from employee service
-      } : null,
+      employee: employeeData,
     };
 
     console.info(`${LOG_PREFIX} Me response sent`, { userId: jwtUser.sub });

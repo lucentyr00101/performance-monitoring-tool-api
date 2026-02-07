@@ -28,4 +28,10 @@ adhocReviewRoutes.post('/:id/cancel', requireRoles('admin', 'hr', 'manager'), (c
 // Acknowledge ad-hoc review
 adhocReviewRoutes.post('/:id/acknowledge', (c) => adhocReviewController.acknowledge(c));
 
+// Submit self-review for ad-hoc review
+adhocReviewRoutes.put('/:id/self-review', (c) => adhocReviewController.submitSelfReview(c));
+
+// Submit manager review for ad-hoc review
+adhocReviewRoutes.put('/:id/manager-review', (c) => adhocReviewController.submitManagerReview(c));
+
 export { adhocReviewRoutes };

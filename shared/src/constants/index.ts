@@ -107,7 +107,12 @@ export type ReviewStatus = (typeof REVIEW_STATUS)[keyof typeof REVIEW_STATUS];
 // Ad-hoc review status
 export const ADHOC_REVIEW_STATUS = {
   INITIATED: 'initiated',
+  SELF_REVIEW_PENDING: 'self_review_pending',
+  SELF_REVIEW_SUBMITTED: 'self_review_submitted',
+  MANAGER_REVIEW_PENDING: 'manager_review_pending',
+  MANAGER_REVIEW_SUBMITTED: 'manager_review_submitted',
   PENDING_ACKNOWLEDGMENT: 'pending_acknowledgment',
+  ACKNOWLEDGED: 'acknowledged',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
 } as const;
@@ -229,3 +234,52 @@ export const EXPORT_FORMATS = {
 } as const;
 
 export type ExportFormat = (typeof EXPORT_FORMATS)[keyof typeof EXPORT_FORMATS];
+
+// Notification types
+export const NOTIFICATION_TYPES = {
+  REVIEW_ASSIGNED: 'review_assigned',
+  REVIEW_COMPLETED: 'review_completed',
+  REVIEW_REMINDER: 'review_reminder',
+  GOAL_UPDATED: 'goal_updated',
+  GOAL_DUE: 'goal_due',
+  SYSTEM: 'system',
+  ANNOUNCEMENT: 'announcement',
+} as const;
+
+export type NotificationTypeConst = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
+
+// Notification status
+export const NOTIFICATION_STATUS = {
+  UNREAD: 'unread',
+  READ: 'read',
+} as const;
+
+export type NotificationStatusConst = (typeof NOTIFICATION_STATUS)[keyof typeof NOTIFICATION_STATUS];
+
+// Notification priority
+export const NOTIFICATION_PRIORITY = {
+  LOW: 'low',
+  NORMAL: 'normal',
+  HIGH: 'high',
+  URGENT: 'urgent',
+} as const;
+
+export type NotificationPriorityConst = (typeof NOTIFICATION_PRIORITY)[keyof typeof NOTIFICATION_PRIORITY];
+
+// Adhoc review submission status
+export const ADHOC_SUBMISSION_STATUS = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  SUBMITTED: 'submitted',
+} as const;
+
+export type AdhocSubmissionStatus = (typeof ADHOC_SUBMISSION_STATUS)[keyof typeof ADHOC_SUBMISSION_STATUS];
+
+// KPI periods
+export const KPI_PERIODS = {
+  MONTHLY: 'monthly',
+  QUARTERLY: 'quarterly',
+  YEARLY: 'yearly',
+} as const;
+
+export type KpiPeriod = (typeof KPI_PERIODS)[keyof typeof KPI_PERIODS];

@@ -131,6 +131,17 @@ export interface IAdhocReviewSettings {
   includeGoals: boolean;
 }
 
+export interface IAdhocReviewAnswer {
+  questionId: Types.ObjectId;
+  value: string | number | boolean | string[];
+}
+
+export interface IAdhocReviewSubmission {
+  status: 'pending' | 'in_progress' | 'submitted';
+  submittedAt?: Date;
+  answers: IAdhocReviewAnswer[];
+}
+
 export interface IAdhocReview extends BaseDocument {
   employeeId: Types.ObjectId;
   managerId: Types.ObjectId;
@@ -140,10 +151,23 @@ export interface IAdhocReview extends BaseDocument {
   reviewFormId?: Types.ObjectId;
   selfReviewId?: Types.ObjectId;
   managerReviewId?: Types.ObjectId;
-  status: 'initiated' | 'pending_acknowledgment' | 'completed' | 'cancelled';
+  selfReview?: IAdhocReviewSubmission;
+  managerReview?: IAdhocReviewSubmission;
+  status:
+    | 'initiated'
+    | 'self_review_pending'
+    | 'self_review_submitted'
+    | 'manager_review_pending'
+    | 'manager_review_submitted'
+    | 'pending_acknowledgment'
+    | 'acknowledged'
+    | 'completed'
+    | 'cancelled';
   settings: IAdhocReviewSettings;
   triggeredAt: Date;
   completedAt?: Date;
+  acknowledgedAt?: Date;
+  acknowledgmentComments?: string;
 }
 
 // Review Form types
@@ -219,13 +243,43 @@ export interface IFormVersionHistory extends BaseDocument {
 }
 
 // Notification types
+export type NotificationType =
+  | 'review_assigned'
+  | 'review_completed'
+  | 'review_reminder'
+  | 'goal_updated'
+  | 'goal_due'
+  | 'system'
+  | 'announcement';
+
+export type NotificationStatus = 'unread' | 'read';
+export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
+
 export interface INotification extends BaseDocument {
   userId: Types.ObjectId;
-  type: string;
+  type: NotificationType;
   title: string;
   message: string;
-  link?: string;
-  isRead: boolean;
+  status: NotificationStatus;
+  priority: NotificationPriority;
+  actionUrl?: string;
+  metadata?: Record<string, unknown>;
+  readAt?: Date;
+}
+
+// KPI / Analytics types
+export interface IKpiTrends {
+  performanceScore: number[];
+  goalsCompletion: number[];
+}
+
+export interface IKpiData {
+  averagePerformanceScore: number;
+  goalsCompletionRate: number;
+  reviewCompletionRate: number;
+  employeeCount: number;
+  activeReviewCycles: number;
+  trends: IKpiTrends;
 }
 
 // API Response types

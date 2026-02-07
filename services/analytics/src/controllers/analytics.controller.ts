@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { analyticsService } from '@analytics/services/index.js';
-import { successResponse, errorResponse, type JwtPayload } from '@pmt/shared';
+import { successResponse, errorResponse, kpiQuerySchema, type JwtPayload } from '@pmt/shared';
 
 const LOG_PREFIX = '[AnalyticsController]';
 
@@ -117,6 +117,34 @@ export class AnalyticsController {
 
     console.info(`${LOG_PREFIX} Export response sent`, { userId: user.sub, type: body.type, format: body.format });
     return c.json(successResponse(result), 200);
+  }
+
+  /**
+   * GET /analytics/kpis
+   */
+  async getKpis(c: Context) {
+    const user = c.get('user') as JwtPayload;
+    console.info(`${LOG_PREFIX} GET /analytics/kpis`, { userId: user.sub });
+
+    const query = c.req.query();
+    const parsed = kpiQuerySchema.safeParse({
+      period: query.period,
+      department: query.department,
+    });
+
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} KPI validation failed`, { errors: parsed.error.errors });
+      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
+    }
+
+    const authHeader = c.req.header('Authorization');
+    const kpis = await analyticsService.getKpis(
+      { period: parsed.data.period, department: parsed.data.department },
+      authHeader,
+    );
+
+    console.info(`${LOG_PREFIX} KPI response sent`, { userId: user.sub });
+    return c.json(successResponse(kpis), 200);
   }
 }
 
