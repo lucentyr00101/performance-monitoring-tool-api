@@ -1,6 +1,7 @@
 import { AdhocReview, type AdhocReviewDocument } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
+import { Types } from 'mongoose';
 
 const LOG_PREFIX = '[AdhocReviewService]';
 
@@ -220,7 +221,10 @@ export class AdhocReviewService {
     review.selfReview = {
       status: submissionStatus,
       submittedAt: submissionStatus === 'submitted' ? new Date() : undefined,
-      answers,
+      answers: answers.map(answer => ({
+        questionId: new Types.ObjectId(answer.questionId),
+        value: answer.value,
+      })),
     };
 
     if (submissionStatus === 'submitted') {
@@ -262,7 +266,10 @@ export class AdhocReviewService {
     review.managerReview = {
       status: submissionStatus,
       submittedAt: submissionStatus === 'submitted' ? new Date() : undefined,
-      answers,
+      answers: answers.map(answer => ({
+        questionId: new Types.ObjectId(answer.questionId),
+        value: answer.value,
+      })),
     };
 
     if (submissionStatus === 'submitted') {
