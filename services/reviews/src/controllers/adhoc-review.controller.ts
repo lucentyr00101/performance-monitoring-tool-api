@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { adhocReviewService } from '@reviews/services/index.js';
+import { adhocReviewService, type AdhocReviewListItem } from '@reviews/services/index.js';
 import {
   successResponse,
   errorResponse,
@@ -55,8 +55,26 @@ export class AdhocReviewController {
 
     const { reviews, total } = await adhocReviewService.listAdhocReviews(filters, pagination);
 
+    // Transform reviews to match frontend response structure
+    const transformedReviews = reviews.map((review: AdhocReviewListItem) => ({
+      id: review.id,
+      employee: review.employee,
+      manager: review.manager,
+      triggeredBy: review.triggeredBy,
+      reviewForm: review.reviewForm,
+      reason: review.reason,
+      status: review.status,
+      dueDate: review.dueDate?.toISOString() ?? null,
+      triggeredAt: review.triggeredAt?.toISOString() ?? null,
+      selfReviewStatus: review.selfReviewStatus,
+      managerReviewStatus: review.managerReviewStatus,
+      settings: review.settings,
+      createdAt: review.createdAt?.toISOString() ?? null,
+      updatedAt: review.updatedAt?.toISOString() ?? null,
+    }));
+
     console.info(`${LOG_PREFIX} List response sent`, { total });
-    return c.json(successResponse(reviews, {
+    return c.json(successResponse(transformedReviews, {
       pagination: {
         page: pagination.page,
         per_page: pagination.perPage,

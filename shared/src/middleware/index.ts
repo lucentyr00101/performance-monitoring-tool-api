@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { verify } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import type { JwtPayload } from '../types/index.js';
 import { errorResponse, AppError } from '../utils/index.js';
 import { ERROR_CODES, USER_ROLES, type UserRole } from '../constants/index.js';
@@ -50,7 +50,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
   }
 
   try {
-    const decoded = verify(token, getJwtSecret()) as JwtPayload;
+    const decoded = jwt.verify(token, getJwtSecret()) as JwtPayload;
     c.set('user', decoded);
     console.info(`${LOG_PREFIX} Auth successful`, { requestId, userId: decoded.sub, role: decoded.role });
     await next();
@@ -71,7 +71,7 @@ export async function optionalAuthMiddleware(c: Context, next: Next): Promise<Re
     const parts = authHeader.split(' ');
     if (parts.length === 2 && parts[0] === 'Bearer' && parts[1]) {
       try {
-        const decoded = verify(parts[1], getJwtSecret()) as JwtPayload;
+        const decoded = jwt.verify(parts[1], getJwtSecret()) as JwtPayload;
         c.set('user', decoded);
         console.info(`${LOG_PREFIX} Optional auth - token valid`, { requestId, userId: decoded.sub, role: decoded.role });
       } catch {

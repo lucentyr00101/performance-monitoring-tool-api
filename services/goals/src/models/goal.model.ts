@@ -120,6 +120,15 @@ const goalSchema = new Schema<GoalDocument>(
         ret.id = (ret._id as object).toString();
         delete ret._id;
         delete ret.__v;
+        
+        // Format date fields to YYYY-MM-DD (keep timestamps as ISO 8601)
+        if (ret.startDate instanceof Date) {
+          ret.startDate = ret.startDate.toISOString().split('T')[0];
+        }
+        if (ret.dueDate instanceof Date) {
+          ret.dueDate = ret.dueDate.toISOString().split('T')[0];
+        }
+        
         return ret;
       },
     },

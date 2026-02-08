@@ -3,6 +3,11 @@ import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
 import { Types } from 'mongoose';
 
+// Import stub models to ensure they're registered before population
+import '@reviews/models/employee.model.js';
+import '@reviews/models/user.model.js';
+import '@reviews/models/department.model.js';
+
 const LOG_PREFIX = '[AdhocReviewService]';
 
 export interface CreateAdhocReviewDTO {
@@ -35,11 +40,61 @@ export interface Pagination {
   sortOrder: string;
 }
 
+// Response DTO for list endpoint
+export interface EmployeeRef {
+  id: string;
+  firstName: string;
+  lastName: string;
+  jobTitle?: string;
+  department?: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface ManagerRef {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface UserRef {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface ReviewFormRef {
+  id: string;
+  name: string;
+}
+
+export interface AdhocReviewListItem {
+  id: string;
+  employee: EmployeeRef;
+  manager?: ManagerRef;
+  triggeredBy: UserRef;
+  reviewForm?: ReviewFormRef;
+  reason?: string;
+  status: string;
+  dueDate?: Date;
+  triggeredAt: Date;
+  selfReviewStatus?: 'pending' | 'in_progress' | 'submitted' | null;
+  managerReviewStatus?: 'pending' | 'in_progress' | 'submitted' | null;
+  settings?: {
+    selfReviewRequired?: boolean;
+    managerReviewRequired?: boolean;
+    includeGoals?: boolean;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export class AdhocReviewService {
   async listAdhocReviews(
     filters: AdhocReviewFilters,
     pagination: Pagination
-  ): Promise<{ reviews: AdhocReviewDocument[]; total: number }> {
+  ): Promise<{ reviews: AdhocReviewListItem[]; total: number }> {
     console.info(`${LOG_PREFIX} Listing ad-hoc reviews`, { filters, page: pagination.page, perPage: pagination.perPage });
 
     const query: FilterQuery<AdhocReviewDocument> = {};
@@ -59,20 +114,100 @@ export class AdhocReviewService {
 
     const [reviews, total] = await Promise.all([
       AdhocReview.find(query)
+        .populate({
+          path: 'employeeId',
+          select: 'firstName lastName jobTitle department',
+          populate: {
+            path: 'department',
+            select: 'name',
+          },
+        })
+        .populate('managerId', 'firstName lastName')
+        .populate('triggeredBy', 'firstName lastName')
+        .populate('reviewFormId', 'name')
         .sort({ [sortField]: sortDirection })
         .skip(pagination.skip)
         .limit(pagination.perPage),
       AdhocReview.countDocuments(query),
     ]);
 
+    // Transform reviews to AdhocReviewListItem[]
+    const transformedReviews: AdhocReviewListItem[] = reviews.map(review => {
+      const employee = review.employeeId as any;
+      const manager = review.managerId as any;
+      const triggeredBy = review.triggeredBy as any;
+      const reviewForm = review.reviewFormId as any;
+
+      // Handle case where employee might not be populated or doesn't exist
+      const employeeData: EmployeeRef = employee && typeof employee === 'object' ? {
+        id: employee._id?.toString() ?? employee.toString(),
+        firstName: employee.firstName ?? 'Unknown',
+        lastName: employee.lastName ?? 'User',
+        jobTitle: employee.jobTitle,
+        department: employee.department && typeof employee.department === 'object' ? {
+          id: employee.department._id?.toString() ?? employee.department.toString(),
+          name: employee.department.name ?? 'Unknown Department',
+        } : undefined,
+      } : {
+        id: typeof employee === 'string' ? employee : review.employeeId?.toString() ?? '',
+        firstName: 'Unknown',
+        lastName: 'User',
+      };
+
+      const triggeredByData: UserRef = triggeredBy && typeof triggeredBy === 'object' ? {
+        id: triggeredBy._id?.toString() ?? triggeredBy.toString(),
+        firstName: triggeredBy.firstName ?? 'Unknown',
+        lastName: triggeredBy.lastName ?? 'User',
+      } : {
+        id: typeof triggeredBy === 'string' ? triggeredBy : review.triggeredBy?.toString() ?? '',
+        firstName: 'Unknown',
+        lastName: 'User',
+      };
+
+      return {
+        id: review._id.toString(),
+        employee: employeeData,
+        manager: manager && typeof manager === 'object' ? {
+          id: manager._id?.toString() ?? manager.toString(),
+          firstName: manager.firstName ?? 'Unknown',
+          lastName: manager.lastName ?? 'Manager',
+        } : undefined,
+        triggeredBy: triggeredByData,
+        reviewForm: reviewForm && typeof reviewForm === 'object' ? {
+          id: reviewForm._id?.toString() ?? reviewForm.toString(),
+          name: reviewForm.name ?? 'Unknown Form',
+        } : undefined,
+        reason: review.reason,
+        status: review.status,
+        dueDate: review.dueDate,
+        triggeredAt: review.createdAt,
+        selfReviewStatus: review.selfReview?.status ?? null,
+        managerReviewStatus: review.managerReview?.status ?? null,
+        settings: review.settings,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+      };
+    });
+
     console.info(`${LOG_PREFIX} Ad-hoc reviews listed`, { count: reviews.length, total });
-    return { reviews, total };
+    return { reviews: transformedReviews, total };
   }
 
   async getAdhocReviewById(id: string): Promise<AdhocReviewDocument> {
     console.info(`${LOG_PREFIX} Getting ad-hoc review by ID`, { reviewId: id });
 
-    const review = await AdhocReview.findById(id);
+    const review = await AdhocReview.findById(id)
+      .populate({
+        path: 'employeeId',
+        select: 'firstName lastName jobTitle department',
+        populate: {
+          path: 'department',
+          select: 'name',
+        },
+      })
+      .populate('managerId', 'firstName lastName')
+      .populate('triggeredBy', 'firstName lastName')
+      .populate('reviewFormId', 'name');
 
     if (!review) {
       console.warn(`${LOG_PREFIX} Ad-hoc review not found`, { reviewId: id });

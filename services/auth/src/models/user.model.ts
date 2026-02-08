@@ -11,7 +11,6 @@ const userSchema = new Schema<UserDocument>(
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
       validate: {
         validator: (v: string) => /^[\w-.]+@([\w-]+\.)+[\w-]{2,}$/.test(v),
         message: 'Invalid email format'

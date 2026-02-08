@@ -49,8 +49,7 @@ const departmentSchema = new Schema<DepartmentDocument>(
   }
 );
 
-// Indexes
-departmentSchema.index({ name: 1 });
+// Indexes (name already has unique index from schema definition)
 departmentSchema.index({ parentId: 1 });
 departmentSchema.index({ status: 1 });
 

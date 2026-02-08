@@ -18,6 +18,11 @@ import {
 } from '@pmt/shared';
 import 'dotenv/config';
 
+// Import cross-service model stubs to register them with Mongoose
+import '@reviews/models/employee.model.js';
+import '@reviews/models/user.model.js';
+import '@reviews/models/department.model.js';
+
 const app = new Hono();
 
 // Global middleware

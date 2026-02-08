@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun run build:*)",
+      "Bash(bun run test)",
+      "Bash(bun run lint:*)",
+      "Bash(tsc:*)",
+      "Bash(bunx tsc:*)",
+      "Bash(bunx @biomejs/biome --version:*)",
+      "Bash(grep:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(docker exec:*)"
+    ]
+  }
+}

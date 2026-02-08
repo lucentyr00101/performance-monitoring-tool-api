@@ -87,9 +87,7 @@ const employeeSchema = new Schema<EmployeeDocument>(
   }
 );
 
-// Indexes
-employeeSchema.index({ email: 1 });
-employeeSchema.index({ employeeCode: 1 });
+// Indexes (email and employeeCode already have unique indexes from schema definition)
 employeeSchema.index({ departmentId: 1 });
 employeeSchema.index({ managerId: 1 });
 employeeSchema.index({ status: 1 });

@@ -13,6 +13,9 @@ import {
 } from '@pmt/shared';
 import 'dotenv/config';
 
+// Register Employee model for population (cross-service reference)
+import '@goals/models/employee.model.js';
+
 const app = new Hono();
 
 // Global middleware
