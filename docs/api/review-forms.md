@@ -843,6 +843,8 @@ Authorization: Bearer <token>
 | `status` | string | draft, published, archived |
 | `is_default` | boolean | Company default form |
 | `sections` | array | Form sections |
+| `sections_count` | integer | Total number of sections |
+| `questions_count` | integer | Total number of questions across all sections |
 | `settings` | object | Form configuration |
 | `assigned_departments` | array | Departments using this form |
 | `created_by` | object | Creator info |

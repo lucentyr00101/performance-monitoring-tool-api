@@ -204,6 +204,18 @@ const reviewFormSchema = new Schema<ReviewFormDocument>(
   }
 );
 
+// Virtual fields for counts
+reviewFormSchema.virtual('sectionsCount').get(function (this: ReviewFormDocument) {
+  return this.sections?.length || 0;
+});
+
+reviewFormSchema.virtual('questionsCount').get(function (this: ReviewFormDocument) {
+  if (!this.sections || this.sections.length === 0) return 0;
+  return this.sections.reduce((total, section) => {
+    return total + (section.questions?.length || 0);
+  }, 0);
+});
+
 reviewFormSchema.index({ name: 1 });
 reviewFormSchema.index({ status: 1 });
 reviewFormSchema.index({ isDefault: 1 });

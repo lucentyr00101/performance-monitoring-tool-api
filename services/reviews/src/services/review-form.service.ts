@@ -63,15 +63,39 @@ export class ReviewFormService {
 
     const [forms, total] = await Promise.all([
       ReviewForm.find(query)
-        .select('-sections.questions')
         .sort({ [sortField]: sortDirection })
         .skip(pagination.skip)
-        .limit(pagination.perPage),
+        .limit(pagination.perPage)
+        .lean(),
       ReviewForm.countDocuments(query),
     ]);
 
+    // Transform forms to exclude questions but include counts
+    const transformedForms = forms.map((form: any) => {
+      const sectionsCount = form.sections?.length || 0;
+      const questionsCount = form.sections?.reduce((total: number, section: any) => {
+        return total + (section.questions?.length || 0);
+      }, 0) || 0;
+
+      // Remove questions from sections for list response
+      const sectionsWithoutQuestions = form.sections?.map((section: any) => {
+        const { questions, ...sectionWithoutQuestions } = section;
+        return sectionWithoutQuestions;
+      });
+
+      return {
+        ...form,
+        sections: sectionsWithoutQuestions,
+        sectionsCount,
+        questionsCount,
+        id: form._id.toString(),
+        _id: undefined,
+        __v: undefined,
+      };
+    });
+
     console.info(`${LOG_PREFIX} Review forms listed`, { count: forms.length, total });
-    return { forms, total };
+    return { forms: transformedForms as any, total };
   }
 
   async getReviewFormById(id: string): Promise<ReviewFormDocument> {
