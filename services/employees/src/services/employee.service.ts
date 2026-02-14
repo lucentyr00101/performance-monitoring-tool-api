@@ -1,6 +1,6 @@
 import { Employee, type EmployeeDocument } from '@employees/models/index.js';
 import { AppError, parsePagination, type PaginationQuery } from '@pmt/shared';
-import type { FilterQuery } from 'mongoose';
+import mongoose, { type FilterQuery } from 'mongoose';
 import type { z } from 'zod';
 import type { employeeQuerySchema } from '@pmt/shared';
 
@@ -162,23 +162,76 @@ export class EmployeeService {
   /**
    * Get employee by ID
    */
-  async getEmployeeById(id: string): Promise<EmployeeDocument> {
+  async getEmployeeById(id: string): Promise<any> {
     console.info(`${LOG_PREFIX} Getting employee by ID`, { employeeId: id });
-    
-    const employee = await Employee.findById(id)
-      .populate('departmentId', 'name')
-      .populate('managerId', 'firstName lastName jobTitle email');
 
-    if (!employee) {
+    const pipeline = [
+      {
+        $match: { _id: new mongoose.Types.ObjectId(id) }
+      },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'departmentId',
+          foreignField: '_id',
+          as: 'department'
+        }
+      },
+      {
+        $unwind: {
+          path: '$department',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'employees',
+          localField: 'department.managerId',
+          foreignField: '_id',
+          as: 'manager'
+        }
+      },
+      {
+        $addFields: {
+          managerFullName: {
+            $cond: {
+              if: { $gt: [{ $size: '$manager' }, 0] },
+              then: {
+                $concat: [
+                  { $arrayElemAt: ['$manager.firstName', 0] },
+                  ' ',
+                  { $arrayElemAt: ['$manager.lastName', 0] }
+                ]
+              },
+              else: null
+            }
+          },
+          departmentName: '$department.name'
+        }
+      },
+      {
+        $project: {
+          department: 0,
+          manager: 0
+        }
+      }
+    ];
+
+    const result = await Employee.aggregate(pipeline);
+
+    if (!result || result.length === 0) {
       console.warn(`${LOG_PREFIX} Employee not found`, { employeeId: id });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
 
-    console.info(`${LOG_PREFIX} Employee retrieved`, { 
-      employeeId: id, 
-      email: employee.email 
+    const employee = result[0];
+
+    console.info(`${LOG_PREFIX} Employee retrieved`, {
+      employeeId: id,
+      email: employee.email,
+      managerFullName: employee.managerFullName
     });
-    
+
     return employee;
   }
 
