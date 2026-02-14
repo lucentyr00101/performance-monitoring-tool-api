@@ -34,39 +34,94 @@ export class EmployeeService {
    */
   async listEmployees(
     params: EmployeeQueryParams
-  ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
-    console.info(`${LOG_PREFIX} Listing employees`, { 
-      page: params.page, 
-      status: params.status, 
+  ): Promise<{ employees: any[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+    console.info(`${LOG_PREFIX} Listing employees`, {
+      page: params.page,
+      status: params.status,
       departmentId: params.department_id,
-      search: params.search 
+      search: params.search
     });
-    
+
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
-    const query: FilterQuery<EmployeeDocument> = {};
+    const matchConditions: any = {};
 
     if (params.status) {
-      query.status = params.status;
+      matchConditions.status = params.status;
     }
     if (params.department_id) {
-      query.departmentId = params.department_id;
+      matchConditions.departmentId = new mongoose.Types.ObjectId(params.department_id);
     }
     if (params.manager_id) {
-      query.managerId = params.manager_id;
+      matchConditions.managerId = new mongoose.Types.ObjectId(params.manager_id);
     }
     if (params.rank) {
-      query.rank = params.rank;
+      matchConditions.rank = params.rank;
     }
     if (params.search) {
-      query.$or = [
+      matchConditions.$or = [
         { firstName: { $regex: params.search, $options: 'i' } },
         { lastName: { $regex: params.search, $options: 'i' } },
         { email: { $regex: params.search, $options: 'i' } },
       ];
     }
 
-    // Map snake_case sort field to camelCase model field
+    // Build aggregation pipeline
+    const pipeline: any[] = [];
+
+    // Match stage
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
+
+    // Lookup department
+    pipeline.push({
+      $lookup: {
+        from: 'departments',
+        localField: 'departmentId',
+        foreignField: '_id',
+        as: 'department'
+      }
+    });
+
+    pipeline.push({
+      $unwind: {
+        path: '$department',
+        preserveNullAndEmptyArrays: true
+      }
+    });
+
+    // Lookup manager from department
+    pipeline.push({
+      $lookup: {
+        from: 'employees',
+        localField: 'department.managerId',
+        foreignField: '_id',
+        as: 'manager'
+      }
+    });
+
+    // Add computed fields
+    pipeline.push({
+      $addFields: {
+        departmentName: '$department.name',
+        managerFullName: {
+          $cond: {
+            if: { $gt: [{ $size: '$manager' }, 0] },
+            then: {
+              $concat: [
+                { $arrayElemAt: ['$manager.firstName', 0] },
+                ' ',
+                { $arrayElemAt: ['$manager.lastName', 0] }
+              ]
+            },
+            else: null
+          }
+        }
+      }
+    });
+
+    // Map snake_case sort field to camelCase or special fields
     const sortFieldMap: Record<string, string> = {
       'first_name': 'firstName',
       'last_name': 'lastName',
@@ -75,83 +130,35 @@ export class EmployeeService {
       'employment_type': 'employmentType',
       'created_at': 'createdAt',
       'updated_at': 'updatedAt',
+      'department': 'departmentName',
     };
-    
+
+    const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    // Special handling for department sorting (needs aggregation)
-    if (sortBy === 'department') {
-      const pipeline: any[] = [
-        { $match: query },
-        {
-          $lookup: {
-            from: 'departments',
-            localField: 'departmentId',
-            foreignField: '_id',
-            as: 'department',
-          },
-        },
-        {
-          $lookup: {
-            from: 'employees',
-            localField: 'managerId',
-            foreignField: '_id',
-            as: 'manager',
-          },
-        },
-        {
-          $addFields: {
-            departmentName: { $arrayElemAt: ['$department.name', 0] },
-          },
-        },
-        { $sort: { departmentName: sortDirection } },
-        { $skip: skip },
-        { $limit: perPage },
-        {
-          $project: {
-            department: 0,
-            manager: 0,
-            departmentName: 0,
-          },
-        },
-      ];
+    // Sort stage
+    pipeline.push({ $sort: { [sortField]: sortDirection } });
 
-      const [employees, countResult] = await Promise.all([
-        Employee.aggregate(pipeline).collation({ locale: 'en', strength: 2 }),
-        Employee.countDocuments(query),
-      ]);
+    // Pagination
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: perPage });
 
-      // Manually populate after aggregation
-      await Employee.populate(employees, [
-        { path: 'departmentId', select: 'name' },
-        { path: 'managerId', select: 'firstName lastName' },
-      ]);
+    // Project out temporary fields
+    pipeline.push({
+      $project: {
+        department: 0,
+        manager: 0
+      }
+    });
 
-      console.info(`${LOG_PREFIX} Listed employees`, { total: countResult, page, perPage });
-      
-      return {
-        employees: employees as EmployeeDocument[],
-        total: countResult,
-        pagination: { page, perPage, skip, sortBy: 'department', sortOrder },
-      };
-    }
-
-    // Standard sorting for other fields
-    const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
-
+    // Execute aggregation and count in parallel
     const [employees, total] = await Promise.all([
-      Employee.find(query)
-        .populate('departmentId', 'name')
-        .populate('managerId', 'firstName lastName')
-        .sort({ [sortField]: sortDirection })
-        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
-        .skip(skip)
-        .limit(perPage),
-      Employee.countDocuments(query),
+      Employee.aggregate(pipeline).collation({ locale: 'en', strength: 2 }),
+      Employee.countDocuments(matchConditions),
     ]);
 
     console.info(`${LOG_PREFIX} Listed employees`, { total, page, perPage });
-    
+
     return {
       employees,
       total,
@@ -238,13 +245,13 @@ export class EmployeeService {
   /**
    * Create a new employee
    */
-  async createEmployee(data: CreateEmployeeDTO): Promise<EmployeeDocument> {
-    console.info(`${LOG_PREFIX} Creating employee`, { 
-      email: data.email, 
-      firstName: data.firstName, 
-      lastName: data.lastName 
+  async createEmployee(data: CreateEmployeeDTO): Promise<any> {
+    console.info(`${LOG_PREFIX} Creating employee`, {
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName
     });
-    
+
     // Check for duplicate email
     const existingEmployee = await Employee.findOne({ email: data.email.toLowerCase() });
     if (existingEmployee) {
@@ -257,23 +264,21 @@ export class EmployeeService {
       email: data.email.toLowerCase(),
     });
 
-    console.info(`${LOG_PREFIX} Employee created successfully`, { 
-      employeeId: employee._id.toString(), 
-      email: employee.email 
+    console.info(`${LOG_PREFIX} Employee created successfully`, {
+      employeeId: employee._id.toString(),
+      email: employee.email
     });
-    
-    return employee.populate([
-      { path: 'departmentId', select: 'name' },
-      { path: 'managerId', select: 'firstName lastName' },
-    ]);
+
+    // Fetch with aggregation to get departmentName and managerFullName
+    return this.getEmployeeById(employee._id.toString());
   }
 
   /**
    * Update an employee
    */
-  async updateEmployee(id: string, data: UpdateEmployeeDTO): Promise<EmployeeDocument> {
+  async updateEmployee(id: string, data: UpdateEmployeeDTO): Promise<any> {
     console.info(`${LOG_PREFIX} Updating employee`, { employeeId: id, fields: Object.keys(data) });
-    
+
     const employee = await Employee.findById(id);
 
     if (!employee) {
@@ -283,14 +288,14 @@ export class EmployeeService {
 
     // If email is being updated, check for duplicates
     if (data.email && data.email.toLowerCase() !== employee.email) {
-      const existingEmployee = await Employee.findOne({ 
+      const existingEmployee = await Employee.findOne({
         email: data.email.toLowerCase(),
         _id: { $ne: id },
       });
       if (existingEmployee) {
-        console.warn(`${LOG_PREFIX} Update failed - email exists`, { 
-          employeeId: id, 
-          email: data.email 
+        console.warn(`${LOG_PREFIX} Update failed - email exists`, {
+          employeeId: id,
+          email: data.email
         });
         throw new AppError('CONFLICT', 'Employee with this email already exists', 409);
       }
@@ -301,11 +306,9 @@ export class EmployeeService {
     await employee.save();
 
     console.info(`${LOG_PREFIX} Employee updated successfully`, { employeeId: id });
-    
-    return employee.populate([
-      { path: 'departmentId', select: 'name' },
-      { path: 'managerId', select: 'firstName lastName' },
-    ]);
+
+    // Fetch with aggregation to get departmentName and managerFullName
+    return this.getEmployeeById(id);
   }
 
   /**
@@ -336,9 +339,9 @@ export class EmployeeService {
   async getEmployeeTeam(
     managerId: string,
     params: EmployeeQueryParams
-  ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+  ): Promise<{ employees: any[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
     console.info(`${LOG_PREFIX} Getting employee team`, { managerId });
-    
+
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
 
     // Verify manager exists
@@ -347,6 +350,56 @@ export class EmployeeService {
       console.warn(`${LOG_PREFIX} Get team failed - manager not found`, { managerId });
       throw new AppError('NOT_FOUND', 'Employee not found', 404);
     }
+
+    const matchConditions: any = {
+      managerId: new mongoose.Types.ObjectId(managerId),
+      status: { $ne: 'terminated' }
+    };
+
+    // Build aggregation pipeline
+    const pipeline: any[] = [
+      { $match: matchConditions },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'departmentId',
+          foreignField: '_id',
+          as: 'department'
+        }
+      },
+      {
+        $unwind: {
+          path: '$department',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'employees',
+          localField: 'department.managerId',
+          foreignField: '_id',
+          as: 'manager'
+        }
+      },
+      {
+        $addFields: {
+          departmentName: '$department.name',
+          managerFullName: {
+            $cond: {
+              if: { $gt: [{ $size: '$manager' }, 0] },
+              then: {
+                $concat: [
+                  { $arrayElemAt: ['$manager.firstName', 0] },
+                  ' ',
+                  { $arrayElemAt: ['$manager.lastName', 0] }
+                ]
+              },
+              else: null
+            }
+          }
+        }
+      }
+    ];
 
     // Map snake_case sort field to camelCase model field
     const sortFieldMap: Record<string, string> = {
@@ -357,22 +410,28 @@ export class EmployeeService {
       'employment_type': 'employmentType',
       'created_at': 'createdAt',
       'updated_at': 'updatedAt',
+      'department': 'departmentName',
     };
     const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
+    pipeline.push({ $sort: { [sortField]: sortDirection } });
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: perPage });
+    pipeline.push({
+      $project: {
+        department: 0,
+        manager: 0
+      }
+    });
+
     const [employees, total] = await Promise.all([
-      Employee.find({ managerId, status: { $ne: 'terminated' } })
-        .populate('departmentId', 'name')
-        .sort({ [sortField]: sortDirection })
-        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
-        .skip(skip)
-        .limit(perPage),
-      Employee.countDocuments({ managerId, status: { $ne: 'terminated' } }),
+      Employee.aggregate(pipeline).collation({ locale: 'en', strength: 2 }),
+      Employee.countDocuments(matchConditions),
     ]);
 
     console.info(`${LOG_PREFIX} Team retrieved`, { managerId, teamSize: total });
-    
+
     return {
       employees,
       total,
@@ -386,10 +445,60 @@ export class EmployeeService {
   async getEmployeesByDepartment(
     departmentId: string,
     params: EmployeeQueryParams
-  ): Promise<{ employees: EmployeeDocument[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
+  ): Promise<{ employees: any[]; total: number; pagination: ReturnType<typeof parsePagination> }> {
     console.info(`${LOG_PREFIX} Getting employees by department`, { departmentId });
-    
+
     const { page, perPage, skip, sortBy, sortOrder } = parsePagination(params);
+
+    const matchConditions: any = {
+      departmentId: new mongoose.Types.ObjectId(departmentId),
+      status: { $ne: 'terminated' }
+    };
+
+    // Build aggregation pipeline
+    const pipeline: any[] = [
+      { $match: matchConditions },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: 'departmentId',
+          foreignField: '_id',
+          as: 'department'
+        }
+      },
+      {
+        $unwind: {
+          path: '$department',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'employees',
+          localField: 'department.managerId',
+          foreignField: '_id',
+          as: 'manager'
+        }
+      },
+      {
+        $addFields: {
+          departmentName: '$department.name',
+          managerFullName: {
+            $cond: {
+              if: { $gt: [{ $size: '$manager' }, 0] },
+              then: {
+                $concat: [
+                  { $arrayElemAt: ['$manager.firstName', 0] },
+                  ' ',
+                  { $arrayElemAt: ['$manager.lastName', 0] }
+                ]
+              },
+              else: null
+            }
+          }
+        }
+      }
+    ];
 
     // Map snake_case sort field to camelCase model field
     const sortFieldMap: Record<string, string> = {
@@ -400,22 +509,28 @@ export class EmployeeService {
       'employment_type': 'employmentType',
       'created_at': 'createdAt',
       'updated_at': 'updatedAt',
+      'department': 'departmentName',
     };
     const sortField = sortFieldMap[sortBy] || sortBy || 'lastName';
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
+    pipeline.push({ $sort: { [sortField]: sortDirection } });
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: perPage });
+    pipeline.push({
+      $project: {
+        department: 0,
+        manager: 0
+      }
+    });
+
     const [employees, total] = await Promise.all([
-      Employee.find({ departmentId, status: { $ne: 'terminated' } })
-        .populate('managerId', 'firstName lastName')
-        .sort({ [sortField]: sortDirection })
-        .collation({ locale: 'en', strength: 2 }) // Case-insensitive sorting
-        .skip(skip)
-        .limit(perPage),
-      Employee.countDocuments({ departmentId, status: { $ne: 'terminated' } }),
+      Employee.aggregate(pipeline).collation({ locale: 'en', strength: 2 }),
+      Employee.countDocuments(matchConditions),
     ]);
 
     console.info(`${LOG_PREFIX} Department employees retrieved`, { departmentId, total });
-    
+
     return {
       employees,
       total,
