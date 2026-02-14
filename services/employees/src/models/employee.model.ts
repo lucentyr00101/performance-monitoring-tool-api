@@ -46,6 +46,10 @@ const employeeSchema = new Schema<EmployeeDocument>(
       trim: true,
       maxlength: [100, 'Job title cannot exceed 100 characters'],
     },
+    rank: {
+      type: String,
+      enum: ['junior', 'mid', 'senior', 'manager', 'lead', 'ceo'],
+    },
     departmentId: {
       type: Schema.Types.ObjectId,
       ref: 'Department',

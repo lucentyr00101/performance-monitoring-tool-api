@@ -86,6 +86,7 @@ export class EmployeeController {
       email: parsed.data.email,
       phone: parsed.data.phone,
       jobTitle: parsed.data.job_title,
+      rank: parsed.data.rank,
       departmentId: parsed.data.department_id,
       managerId: parsed.data.manager_id,
       hireDate: parsed.data.hire_date ? new Date(parsed.data.hire_date) : undefined,
@@ -121,12 +122,13 @@ export class EmployeeController {
     }
 
     const updateData: Record<string, unknown> = {};
-    
+
     if (parsed.data.first_name) updateData.firstName = parsed.data.first_name;
     if (parsed.data.last_name) updateData.lastName = parsed.data.last_name;
     if (parsed.data.email) updateData.email = parsed.data.email;
     if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone;
     if (parsed.data.job_title) updateData.jobTitle = parsed.data.job_title;
+    if (parsed.data.rank) updateData.rank = parsed.data.rank;
     if (parsed.data.department_id !== undefined) updateData.departmentId = parsed.data.department_id;
     if (parsed.data.manager_id !== undefined) updateData.managerId = parsed.data.manager_id;
     if (parsed.data.employment_type) updateData.employmentType = parsed.data.employment_type;

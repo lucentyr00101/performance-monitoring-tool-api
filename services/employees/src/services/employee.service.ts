@@ -12,6 +12,7 @@ export interface CreateEmployeeDTO {
   email: string;
   phone?: string;
   jobTitle?: string;
+  rank?: 'junior' | 'mid' | 'senior' | 'manager' | 'lead' | 'ceo';
   departmentId?: string;
   managerId?: string | null;
   hireDate?: Date;
@@ -53,6 +54,9 @@ export class EmployeeService {
     }
     if (params.manager_id) {
       query.managerId = params.manager_id;
+    }
+    if (params.rank) {
+      query.rank = params.rank;
     }
     if (params.search) {
       query.$or = [

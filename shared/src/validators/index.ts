@@ -38,6 +38,7 @@ export const reviewCycleTypeSchema = z.enum(['annual', 'semi-annual', 'quarterly
 export const employmentTypeSchema = z.enum(['full-time', 'part-time', 'contract']);
 export const reviewTypeSchema = z.enum(['self', 'manager', 'peer']);
 export const userRoleSchema = z.enum(['admin', 'hr', 'manager', 'employee', 'csuite']);
+export const employeeRankSchema = z.enum(['junior', 'mid', 'senior', 'manager', 'lead', 'ceo']);
 
 // Auth schemas
 export const loginSchema = z.object({
@@ -69,6 +70,7 @@ export const createEmployeeSchema = z.object({
   email: emailSchema,
   phone: phoneSchema,
   job_title: z.string().max(100).optional(),
+  rank: employeeRankSchema.optional(),
   department_id: objectIdSchema.optional(),
   manager_id: objectIdSchema.optional(),
   hire_date: optionalDateSchema,
@@ -84,6 +86,7 @@ export const updateEmployeeSchema = z.object({
   email: emailSchema.optional(),
   phone: phoneSchema,
   job_title: z.string().max(100).optional(),
+  rank: employeeRankSchema.optional(),
   department_id: objectIdSchema.nullable().optional(),
   manager_id: objectIdSchema.nullable().optional(),
   employment_type: employmentTypeSchema.optional(),
@@ -95,6 +98,7 @@ export const employeeQuerySchema = paginationQuerySchema.extend({
   status: employeeStatusSchema.optional(),
   department_id: objectIdSchema.optional(),
   manager_id: objectIdSchema.optional(),
+  rank: employeeRankSchema.optional(),
   search: z.string().optional(),
   first_name: z.string().optional(),
   last_name: z.string().optional(),

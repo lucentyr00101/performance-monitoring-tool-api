@@ -37,6 +37,7 @@ export interface IEmployee extends BaseDocument {
   email: string;
   phone?: string;
   jobTitle?: string;
+  rank?: 'junior' | 'mid' | 'senior' | 'manager' | 'lead' | 'ceo';
   departmentId?: Types.ObjectId;
   managerId?: Types.ObjectId;
   hireDate?: Date;

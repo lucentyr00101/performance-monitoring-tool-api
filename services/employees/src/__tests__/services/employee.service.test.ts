@@ -41,6 +41,23 @@ describe('EmployeeService', () => {
       expect(employee.status).toBe('active');
     });
 
+    it('should create an employee with rank', async () => {
+      const employeeData = {
+        firstName: 'Jane',
+        lastName: 'Smith',
+        email: 'jane.smith@example.com',
+        jobTitle: 'Senior Software Engineer',
+        rank: 'senior' as const,
+        departmentId,
+        hireDate: new Date('2024-01-15'),
+      };
+
+      const employee = await employeeService.createEmployee(employeeData);
+
+      expect(employee.firstName).toBe('Jane');
+      expect(employee.rank).toBe('senior');
+    });
+
     it('should throw error for duplicate email', async () => {
       const employeeData = {
         firstName: 'John',
@@ -83,6 +100,14 @@ describe('EmployeeService', () => {
       });
 
       expect(updated.jobTitle).toBe('Senior Software Engineer');
+    });
+
+    it('should update employee rank', async () => {
+      const updated = await employeeService.updateEmployee(employeeId, {
+        rank: 'senior',
+      });
+
+      expect(updated.rank).toBe('senior');
     });
 
     it('should throw error for non-existent employee', async () => {
@@ -196,6 +221,42 @@ describe('EmployeeService', () => {
 
       expect(result.employees).toHaveLength(1);
       expect(result.employees[0].status).toBe('active');
+    });
+
+    it('should filter by rank', async () => {
+      // Create employees with different ranks
+      await Employee.create([
+        {
+          firstName: 'Junior',
+          lastName: 'Dev',
+          email: 'junior@example.com',
+          jobTitle: 'Junior Engineer',
+          rank: 'junior',
+          departmentId,
+          status: 'active',
+          hireDate: new Date('2024-01-15'),
+        },
+        {
+          firstName: 'Senior',
+          lastName: 'Dev',
+          email: 'senior@example.com',
+          jobTitle: 'Senior Engineer',
+          rank: 'senior',
+          departmentId,
+          status: 'active',
+          hireDate: new Date('2024-01-15'),
+        },
+      ]);
+
+      const result = await employeeService.listEmployees({
+        rank: 'senior',
+        page: 1,
+        per_page: 10
+      });
+
+      expect(result.employees).toHaveLength(1);
+      expect(result.employees[0].rank).toBe('senior');
+      expect(result.employees[0].email).toBe('senior@example.com');
     });
   });
 });

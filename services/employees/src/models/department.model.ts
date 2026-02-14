@@ -51,6 +51,7 @@ const departmentSchema = new Schema<DepartmentDocument>(
 
 // Indexes (name already has unique index from schema definition)
 departmentSchema.index({ parentId: 1 });
+departmentSchema.index({ managerId: 1 });
 departmentSchema.index({ status: 1 });
 
 export const Department = mongoose.models.Department as mongoose.Model<DepartmentDocument> || mongoose.model<DepartmentDocument>('Department', departmentSchema);
