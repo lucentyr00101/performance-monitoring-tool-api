@@ -2,8 +2,42 @@ import { ReviewCycle, type ReviewCycleDocument } from '@reviews/models/index.js'
 import { Review } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
+import { Types } from 'mongoose';
 
+const EMPLOYEE_SERVICE_URL = process.env.EMPLOYEE_SERVICE_URL || 'http://localhost:4002';
 const LOG_PREFIX = '[ReviewCycleService]';
+
+interface EmployeeData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  departmentId?: string;
+  managerId?: string;
+  status: string;
+}
+
+interface ReviewGenerationResult {
+  totalEmployees: number;
+  reviewsCreated: {
+    self: number;
+    manager: number;
+    peer: number;
+    hr: number;
+  };
+  reviewsSkipped: {
+    selfReview: number;
+    managerReview: number;
+    peerReview: number;
+    hrReview: number;
+  };
+  errors: Array<{
+    employeeId: string;
+    employeeName: string;
+    reviewType: string;
+    reason: string;
+  }>;
+}
 
 export interface CreateReviewCycleDTO {
   name: string;
@@ -157,7 +191,269 @@ export class ReviewCycleService {
     console.info(`${LOG_PREFIX} Review cycle deleted`, { cycleId: id, name: cycle.name });
   }
 
-  async launchReviewCycle(id: string): Promise<ReviewCycleDocument> {
+  private async fetchEmployeesInScope(
+    cycle: ReviewCycleDocument
+  ): Promise<EmployeeData[]> {
+    const url = new URL(`${EMPLOYEE_SERVICE_URL}/api/v1/employees`);
+    url.searchParams.set('status', 'active');
+    url.searchParams.set('per_page', '1000');
+
+    console.info(`${LOG_PREFIX} Fetching employees`, { cycleId: cycle._id });
+
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Failed to fetch employees`, { error: err });
+      throw new AppError(
+        'SERVICE_UNAVAILABLE',
+        'Failed to fetch employees from employee service',
+        503
+      );
+    }
+
+    if (!response.ok) {
+      console.error(`${LOG_PREFIX} Employee service returned error`, {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      throw new AppError(
+        'SERVICE_UNAVAILABLE',
+        `Employee service returned ${response.status}`,
+        503
+      );
+    }
+
+    const body = await response.json() as any;
+    const employees = (body.data?.employees || body.data || []) as EmployeeData[];
+
+    console.info(`${LOG_PREFIX} Fetched employees from service`, {
+      count: employees.length,
+    });
+
+    // Filter by departments if specified
+    if (cycle.departments && cycle.departments.length > 0) {
+      const deptIds = cycle.departments.map(d => d.toString());
+      const filtered = employees.filter(
+        e => e.departmentId && deptIds.includes(e.departmentId)
+      );
+      console.info(`${LOG_PREFIX} Filtered employees by department`, {
+        before: employees.length,
+        after: filtered.length,
+        departments: deptIds,
+      });
+      return filtered;
+    }
+
+    return employees;
+  }
+
+  private async generateReviewsForCycle(
+    cycle: ReviewCycleDocument
+  ): Promise<ReviewGenerationResult> {
+    console.info(`${LOG_PREFIX} Generating reviews for cycle`, {
+      cycleId: cycle._id,
+    });
+
+    // Check for existing reviews
+    const existingCount = await Review.countDocuments({
+      reviewCycleId: cycle._id,
+    });
+    if (existingCount > 0) {
+      console.warn(`${LOG_PREFIX} Reviews already exist for cycle`, {
+        cycleId: cycle._id,
+        count: existingCount,
+      });
+      throw new AppError(
+        'CONFLICT',
+        `Reviews already exist for this cycle (${existingCount} reviews). Cannot regenerate.`,
+        409
+      );
+    }
+
+    // Fetch employees
+    const employees = await this.fetchEmployeesInScope(cycle);
+
+    if (employees.length === 0) {
+      console.warn(`${LOG_PREFIX} No employees in scope for cycle`, {
+        cycleId: cycle._id,
+      });
+      return {
+        totalEmployees: 0,
+        reviewsCreated: { self: 0, manager: 0, peer: 0, hr: 0 },
+        reviewsSkipped: { selfReview: 0, managerReview: 0, peerReview: 0, hrReview: 0 },
+        errors: [],
+      };
+    }
+
+    // Build review documents
+    const reviewsToCreate: Array<{
+      reviewCycleId: Types.ObjectId;
+      employeeId: Types.ObjectId;
+      reviewerId: Types.ObjectId;
+      reviewerType: 'self' | 'manager' | 'peer' | 'hr';
+      status: 'pending';
+    }> = [];
+
+    const result: ReviewGenerationResult = {
+      totalEmployees: employees.length,
+      reviewsCreated: { self: 0, manager: 0, peer: 0, hr: 0 },
+      reviewsSkipped: { selfReview: 0, managerReview: 0, peerReview: 0, hrReview: 0 },
+      errors: [],
+    };
+
+    for (const employee of employees) {
+      const employeeName = `${employee.firstName} ${employee.lastName}`;
+
+      try {
+        const employeeObjId = new Types.ObjectId(employee.id);
+
+        // Self review
+        if (cycle.settings?.selfReviewEnabled !== false) {
+          reviewsToCreate.push({
+            reviewCycleId: cycle._id,
+            employeeId: employeeObjId,
+            reviewerId: employeeObjId,
+            reviewerType: 'self',
+            status: 'pending',
+          });
+        } else {
+          result.reviewsSkipped.selfReview++;
+        }
+
+        // Manager review
+        if (employee.managerId) {
+          try {
+            const managerObjId = new Types.ObjectId(employee.managerId);
+            reviewsToCreate.push({
+              reviewCycleId: cycle._id,
+              employeeId: employeeObjId,
+              reviewerId: managerObjId,
+              reviewerType: 'manager',
+              status: 'pending',
+            });
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} Invalid managerId`, {
+              employeeId: employee.id,
+              managerId: employee.managerId,
+            });
+            result.reviewsSkipped.managerReview++;
+            result.errors.push({
+              employeeId: employee.id,
+              employeeName,
+              reviewType: 'manager',
+              reason: 'Invalid manager ID format',
+            });
+          }
+        } else {
+          console.warn(`${LOG_PREFIX} Employee has no manager`, {
+            employeeId: employee.id,
+            employeeName,
+          });
+          result.reviewsSkipped.managerReview++;
+          result.errors.push({
+            employeeId: employee.id,
+            employeeName,
+            reviewType: 'manager',
+            reason: 'No manager assigned',
+          });
+        }
+
+        // Peer reviews - not implemented yet
+        if (cycle.settings?.peerReviewEnabled) {
+          result.reviewsSkipped.peerReview++;
+        }
+
+        // HR reviews - not implemented yet
+        if (cycle.settings?.requireCalibration) {
+          result.reviewsSkipped.hrReview++;
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Error processing employee`, {
+          employeeId: employee.id,
+          error: err,
+        });
+        result.errors.push({
+          employeeId: employee.id,
+          employeeName,
+          reviewType: 'all',
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+
+    // Bulk insert reviews
+    if (reviewsToCreate.length > 0) {
+      try {
+        console.info(`${LOG_PREFIX} Inserting reviews`, {
+          count: reviewsToCreate.length,
+        });
+
+        const insertResult = await Review.insertMany(reviewsToCreate, {
+          ordered: false,
+        });
+
+        // Count by type
+        for (const review of insertResult) {
+          const reviewType = review.reviewerType as 'self' | 'manager' | 'peer' | 'hr';
+          result.reviewsCreated[reviewType]++;
+        }
+
+        console.info(`${LOG_PREFIX} Reviews created successfully`, {
+          cycleId: cycle._id,
+          total: insertResult.length,
+          byType: result.reviewsCreated,
+        });
+      } catch (err: any) {
+        // Handle bulk insert errors (e.g., duplicates)
+        if (err.writeErrors) {
+          console.warn(`${LOG_PREFIX} Some reviews failed to create`, {
+            cycleId: cycle._id,
+            failedCount: err.writeErrors.length,
+          });
+
+          // Count successful insertions
+          if (err.insertedDocs) {
+            for (const review of err.insertedDocs) {
+              const reviewType = review.reviewerType as 'self' | 'manager' | 'peer' | 'hr';
+              result.reviewsCreated[reviewType]++;
+            }
+          }
+
+          // Add write errors to results
+          for (const writeErr of err.writeErrors) {
+            const doc = reviewsToCreate[writeErr.index];
+            if (doc) {
+              result.errors.push({
+                employeeId: doc.employeeId.toString(),
+                employeeName: 'Unknown',
+                reviewType: doc.reviewerType,
+                reason: writeErr.errmsg || 'Write error',
+              });
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    console.info(`${LOG_PREFIX} Review generation complete`, {
+      cycleId: cycle._id,
+      totalEmployees: result.totalEmployees,
+      created: result.reviewsCreated,
+      skipped: result.reviewsSkipped,
+      errorCount: result.errors.length,
+    });
+
+    return result;
+  }
+
+  async launchReviewCycle(
+    id: string
+  ): Promise<ReviewCycleDocument & { reviewGeneration?: ReviewGenerationResult }> {
     console.info(`${LOG_PREFIX} Launching review cycle`, { cycleId: id });
 
     const cycle = await ReviewCycle.findById(id);
@@ -168,16 +464,53 @@ export class ReviewCycleService {
     }
 
     if (cycle.status !== 'draft' && cycle.status !== 'scheduled') {
-      console.warn(`${LOG_PREFIX} Cannot launch review cycle with invalid status`, { cycleId: id, status: cycle.status });
-      throw new AppError('CONFLICT', `Cannot launch review cycle with status: ${cycle.status}`, 409);
+      console.warn(`${LOG_PREFIX} Cannot launch review cycle with invalid status`, {
+        cycleId: id,
+        status: cycle.status,
+      });
+      throw new AppError(
+        'CONFLICT',
+        `Cannot launch review cycle with status: ${cycle.status}`,
+        409
+      );
     }
 
     cycle.status = 'active';
     cycle.launchedAt = new Date();
     await cycle.save();
 
-    console.info(`${LOG_PREFIX} Review cycle launched`, { cycleId: id, name: cycle.name, launchedAt: cycle.launchedAt });
-    return cycle;
+    console.info(`${LOG_PREFIX} Review cycle status updated to active`, {
+      cycleId: id,
+    });
+
+    // Generate reviews for all eligible employees
+    let reviewGeneration: ReviewGenerationResult | undefined;
+    try {
+      reviewGeneration = await this.generateReviewsForCycle(cycle);
+      const totalCreated = Object.values(reviewGeneration.reviewsCreated).reduce(
+        (sum, count) => sum + count,
+        0
+      );
+      console.info(`${LOG_PREFIX} Review generation successful`, {
+        cycleId: id,
+        totalCreated,
+      });
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Review generation failed`, {
+        cycleId: id,
+        error: err,
+      });
+      // Cycle is already active - throw error to inform caller
+      throw err;
+    }
+
+    const result = Object.assign(cycle.toObject(), { reviewGeneration });
+    console.info(`${LOG_PREFIX} Review cycle launched`, {
+      cycleId: id,
+      launchedAt: cycle.launchedAt,
+    });
+
+    return result;
   }
 
   async completeReviewCycle(id: string): Promise<ReviewCycleDocument> {
