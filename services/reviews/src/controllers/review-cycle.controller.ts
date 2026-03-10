@@ -88,8 +88,11 @@ export class ReviewCycleController {
       endDate: new Date(parsed.data.end_date),
       departments: parsed.data.departments,
       settings: parsed.data.settings ? {
-        selfReviewEnabled: parsed.data.settings.include_self_assessment,
-        peerReviewEnabled: parsed.data.settings.include_peer_review,
+        selfReviewEnabled: parsed.data.settings.self_review_enabled,
+        peerReviewEnabled: parsed.data.settings.peer_review_enabled,
+        includeGoalReview: parsed.data.settings.include_goal_review,
+        requireCalibration: parsed.data.settings.require_calibration,
+        allowEmployeeViewBeforeRelease: parsed.data.settings.allow_employee_view_before_release,
       } : undefined,
     });
 
@@ -122,8 +125,11 @@ export class ReviewCycleController {
     if (parsed.data.end_date) updateData.endDate = new Date(parsed.data.end_date);
     if (parsed.data.departments) updateData.departments = parsed.data.departments;
     if (parsed.data.settings) updateData.settings = {
-      selfReviewEnabled: parsed.data.settings.include_self_assessment,
-      peerReviewEnabled: parsed.data.settings.include_peer_review,
+      selfReviewEnabled: parsed.data.settings.self_review_enabled,
+      peerReviewEnabled: parsed.data.settings.peer_review_enabled,
+      includeGoalReview: parsed.data.settings.include_goal_review,
+      requireCalibration: parsed.data.settings.require_calibration,
+      allowEmployeeViewBeforeRelease: parsed.data.settings.allow_employee_view_before_release,
     };
 
     const cycle = await reviewCycleService.updateReviewCycle(id, updateData);
@@ -142,7 +148,8 @@ export class ReviewCycleController {
   async launch(c: Context) {
     const id = c.req.param('id');
     console.info(`${LOG_PREFIX} POST /review-cycles/${id}/launch`);
-    const cycle = await reviewCycleService.launchReviewCycle(id);
+    const authHeader = c.req.header('Authorization') ?? '';
+    const cycle = await reviewCycleService.launchReviewCycle(id, authHeader);
     console.info(`${LOG_PREFIX} Launch response sent`, { cycleId: id });
     return c.json(successResponse(cycle), 200);
   }

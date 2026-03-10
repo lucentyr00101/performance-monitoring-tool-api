@@ -83,47 +83,64 @@ export interface IGoal extends BaseDocument {
 
 // Review types (Reviews Service)
 export interface IReviewCycleSettings {
-  includeSelfAssessment: boolean;
-  includeManagerReview: boolean;
-  includePeerReview: boolean;
-  ratingScale: {
-    min: number;
-    max: number;
-    labels?: Record<string, string>;
-  };
+  selfReviewEnabled?: boolean;
+  peerReviewEnabled?: boolean;
+  includeGoalReview?: boolean;
+  requireCalibration?: boolean;
+  allowEmployeeViewBeforeRelease?: boolean;
 }
 
 export interface IReviewCycle extends BaseDocument {
   name: string;
   description?: string;
-  type: 'annual' | 'semi-annual' | 'quarterly' | 'monthly';
+  type: 'annual' | 'semi_annual' | 'quarterly' | 'monthly' | 'probation' | 'project' | 'ad_hoc';
   startDate: Date;
   endDate: Date;
-  status: 'draft' | 'active' | 'completed' | 'cancelled';
-  settings: IReviewCycleSettings;
-  createdBy: Types.ObjectId;
+  status: 'draft' | 'scheduled' | 'active' | 'completed' | 'cancelled';
+  settings?: IReviewCycleSettings;
+  createdBy?: Types.ObjectId;
   departments?: Types.ObjectId[];
+  launchedAt?: Date;
+  completedAt?: Date;
 }
 
 export interface IReview extends BaseDocument {
-  cycleId?: Types.ObjectId;
+  reviewCycleId?: Types.ObjectId;
   adhocReviewId?: Types.ObjectId;
   employeeId: Types.ObjectId;
   reviewerId: Types.ObjectId;
-  type: 'self' | 'manager' | 'peer';
-  status: 'pending' | 'in_progress' | 'submitted' | 'acknowledged';
-  isAdhoc: boolean;
-  formId?: Types.ObjectId;
-  formVersion?: string;
-  formSnapshot?: object;
-  rating?: number;
+  reviewerType: 'self' | 'manager' | 'peer' | 'hr';
+  status: 'pending' | 'in_progress' | 'submitted' | 'acknowledged' | 'disputed' | 'finalized';
+  responses?: Array<{
+    questionId: Types.ObjectId;
+    questionText?: string;
+    responseType?: string;
+    response?: unknown;
+    rating?: number;
+    comment?: string;
+  }>;
+  goalReviews?: Array<{
+    goalId: Types.ObjectId;
+    selfRating?: number;
+    managerRating?: number;
+    selfComment?: string;
+    managerComment?: string;
+    achievement?: number;
+  }>;
+  overallRating?: number;
   ratingsBreakdown?: Record<string, number>;
-  strengths?: string;
-  improvements?: string;
-  comments?: string;
-  employeeComments?: string;
+  overallComment?: string;
+  strengths?: string[];
+  areasForImprovement?: string[];
+  developmentGoals?: string[];
+  privateNotes?: string;
   submittedAt?: Date;
   acknowledgedAt?: Date;
+  employeeComments?: string;
+  calibratedRating?: number;
+  calibratedBy?: Types.ObjectId;
+  calibratedAt?: Date;
+  releasedAt?: Date;
 }
 
 export interface IAdhocReviewSettings {

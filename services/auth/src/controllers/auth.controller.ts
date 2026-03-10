@@ -11,7 +11,17 @@ import {
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  userRoleSchema,
+  objectIdSchema,
 } from '@pmt/shared';
+import { z } from 'zod';
+
+const createUserSchema = z.object({
+  email: z.string().email('Invalid email format').toLowerCase().trim(),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  role: userRoleSchema.optional(),
+  employee_id: objectIdSchema.optional(),
+});
 import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
@@ -220,6 +230,52 @@ export class AuthController {
     return c.json(successResponse({
       message: 'Password has been reset successfully. Please login with your new password.',
     }), 200);
+  }
+
+  /**
+   * POST /auth/internal/users
+   * Internal endpoint for creating user accounts from other services.
+   */
+  async createUser(c: Context) {
+    console.info(`${LOG_PREFIX} POST /auth/internal/users`);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Create user failed - invalid JSON body`);
+      throw createError.badRequest('Invalid JSON in request body');
+    }
+
+    const parsed = createUserSchema.safeParse(body);
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Create user validation failed`, {
+        errors: parsed.error.errors.map(e => e.message),
+      });
+      return c.json(
+        errorResponse('VALIDATION_ERROR', 'Validation failed',
+          parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+        ),
+        422,
+      );
+    }
+
+    const user = await authService.createUser({
+      email: parsed.data.email,
+      password: parsed.data.password,
+      role: parsed.data.role,
+      employeeId: parsed.data.employee_id,
+    });
+
+    const response = {
+      id: user._id.toString(),
+      email: user.email,
+      role: user.role,
+      status: user.status,
+    };
+
+    console.info(`${LOG_PREFIX} User created via internal endpoint`, { userId: user._id.toString() });
+    return c.json(successResponse(response), 201);
   }
 
   /**

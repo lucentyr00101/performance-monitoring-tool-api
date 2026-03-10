@@ -1,6 +1,13 @@
 import { Context } from 'hono';
 import { analyticsService } from '@analytics/services/index.js';
-import { successResponse, errorResponse, kpiQuerySchema, type JwtPayload } from '@pmt/shared';
+import {
+  successResponse,
+  errorResponse,
+  analyticsQuerySchema,
+  kpiQuerySchema,
+  exportQuerySchema,
+  type JwtPayload,
+} from '@pmt/shared';
 
 const LOG_PREFIX = '[AnalyticsController]';
 
@@ -11,9 +18,24 @@ export class AnalyticsController {
   async getDashboard(c: Context) {
     const user = c.get('user') as JwtPayload;
     console.info(`${LOG_PREFIX} GET /analytics/dashboard`, { userId: user.sub });
-    
-    const dashboard = await analyticsService.getDashboard(user);
-    
+
+    const query = c.req.query();
+    const parsed = analyticsQuerySchema.safeParse({
+      period: query.period,
+      year: query.year,
+      quarter: query.quarter,
+      month: query.month,
+      department_id: query.department_id,
+    });
+
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Dashboard validation failed`, { errors: parsed.error.errors });
+      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
+    }
+
+    const authHeader = c.req.header('Authorization');
+    const dashboard = await analyticsService.getDashboard(user, authHeader);
+
     console.info(`${LOG_PREFIX} Dashboard response sent`, { userId: user.sub });
     return c.json(successResponse(dashboard), 200);
   }
@@ -24,18 +46,31 @@ export class AnalyticsController {
   async getGoalAnalytics(c: Context) {
     const user = c.get('user') as JwtPayload;
     console.info(`${LOG_PREFIX} GET /analytics/goals`, { userId: user.sub });
-    
+
     const query = c.req.query();
-    
+    const parsed = analyticsQuerySchema.safeParse({
+      period: query.period,
+      year: query.year,
+      quarter: query.quarter,
+      month: query.month,
+      department_id: query.department_id,
+    });
+
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Goal analytics validation failed`, { errors: parsed.error.errors });
+      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
+    }
+
     const filters = {
-      departmentId: query.department_id,
+      departmentId: parsed.data.department_id,
       employeeId: query.employee_id,
       startDate: query.start_date ? new Date(query.start_date) : undefined,
       endDate: query.end_date ? new Date(query.end_date) : undefined,
     };
 
-    const analytics = await analyticsService.getGoalAnalytics(filters);
-    
+    const authHeader = c.req.header('Authorization');
+    const analytics = await analyticsService.getGoalAnalytics(filters, authHeader);
+
     console.info(`${LOG_PREFIX} Goal analytics response sent`, { userId: user.sub, filters });
     return c.json(successResponse(analytics), 200);
   }
@@ -46,18 +81,31 @@ export class AnalyticsController {
   async getReviewAnalytics(c: Context) {
     const user = c.get('user') as JwtPayload;
     console.info(`${LOG_PREFIX} GET /analytics/reviews`, { userId: user.sub });
-    
+
     const query = c.req.query();
+    const parsed = analyticsQuerySchema.safeParse({
+      period: query.period,
+      year: query.year,
+      quarter: query.quarter,
+      month: query.month,
+      department_id: query.department_id,
+    });
+
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Review analytics validation failed`, { errors: parsed.error.errors });
+      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid query parameters'), 422);
+    }
 
     const filters = {
       cycleId: query.cycle_id,
-      departmentId: query.department_id,
+      departmentId: parsed.data.department_id,
       startDate: query.start_date ? new Date(query.start_date) : undefined,
       endDate: query.end_date ? new Date(query.end_date) : undefined,
     };
 
-    const analytics = await analyticsService.getReviewAnalytics(filters);
-    
+    const authHeader = c.req.header('Authorization');
+    const analytics = await analyticsService.getReviewAnalytics(filters, authHeader);
+
     console.info(`${LOG_PREFIX} Review analytics response sent`, { userId: user.sub, filters });
     return c.json(successResponse(analytics), 200);
   }
@@ -69,9 +117,10 @@ export class AnalyticsController {
     const user = c.get('user') as JwtPayload;
     const id = c.req.param('id');
     console.info(`${LOG_PREFIX} GET /analytics/team/:id`, { userId: user.sub, teamId: id });
-    
-    const analytics = await analyticsService.getTeamAnalytics(id);
-    
+
+    const authHeader = c.req.header('Authorization');
+    const analytics = await analyticsService.getTeamAnalytics(id, authHeader);
+
     console.info(`${LOG_PREFIX} Team analytics response sent`, { userId: user.sub, teamId: id });
     return c.json(successResponse(analytics), 200);
   }
@@ -83,9 +132,10 @@ export class AnalyticsController {
     const user = c.get('user') as JwtPayload;
     const id = c.req.param('id');
     console.info(`${LOG_PREFIX} GET /analytics/department/:id`, { userId: user.sub, departmentId: id });
-    
-    const analytics = await analyticsService.getDepartmentAnalytics(id);
-    
+
+    const authHeader = c.req.header('Authorization');
+    const analytics = await analyticsService.getDepartmentAnalytics(id, authHeader);
+
     console.info(`${LOG_PREFIX} Department analytics response sent`, { userId: user.sub, departmentId: id });
     return c.json(successResponse(analytics), 200);
   }
@@ -96,26 +146,31 @@ export class AnalyticsController {
   async exportAnalytics(c: Context) {
     const user = c.get('user') as JwtPayload;
     console.info(`${LOG_PREFIX} POST /analytics/export`, { userId: user.sub });
-    
+
     const body = await c.req.json();
+    const parsed = exportQuerySchema.safeParse(body);
 
-    if (!body.type || !['goals', 'reviews', 'employees', 'all'].includes(body.type)) {
-      console.warn(`${LOG_PREFIX} Validation failed: Invalid export type`, { userId: user.sub, type: body.type });
-      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid export type'), 422);
+    if (!parsed.success) {
+      console.warn(`${LOG_PREFIX} Export validation failed`, { userId: user.sub, errors: parsed.error.errors });
+      return c.json(
+        errorResponse('VALIDATION_ERROR', 'Validation failed',
+          parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+        ),
+        422,
+      );
     }
 
-    if (!body.format || !['csv', 'json', 'xlsx'].includes(body.format)) {
-      console.warn(`${LOG_PREFIX} Validation failed: Invalid export format`, { userId: user.sub, format: body.format });
-      return c.json(errorResponse('VALIDATION_ERROR', 'Invalid export format'), 422);
-    }
-
+    const authHeader = c.req.header('Authorization');
     const result = await analyticsService.exportAnalytics({
-      type: body.type,
-      format: body.format,
-      filters: body.filters,
-    });
+      type: parsed.data.type,
+      format: parsed.data.format,
+      period: parsed.data.period,
+      year: parsed.data.year,
+      quarter: parsed.data.quarter,
+      departmentId: parsed.data.department_id,
+    }, authHeader);
 
-    console.info(`${LOG_PREFIX} Export response sent`, { userId: user.sub, type: body.type, format: body.format });
+    console.info(`${LOG_PREFIX} Export response sent`, { userId: user.sub, type: parsed.data.type });
     return c.json(successResponse(result), 200);
   }
 

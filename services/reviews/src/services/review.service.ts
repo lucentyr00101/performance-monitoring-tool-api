@@ -2,6 +2,7 @@ import { Review, type ReviewDocument } from '@reviews/models/index.js';
 import { ReviewCycle } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
+import { sendNotification } from '@reviews/utils/notification-client.js';
 
 const LOG_PREFIX = '[ReviewService]';
 
@@ -124,6 +125,14 @@ export class ReviewService {
     review.status = 'submitted';
     review.submittedAt = new Date();
     await review.save();
+
+    // Notify employee that a review has been submitted for them (fire-and-forget)
+    sendNotification({
+      userId: review.employeeId.toString(),
+      type: 'review_completed',
+      title: 'Review Submitted',
+      message: 'A reviewer has submitted their review for you',
+    });
 
     console.info(`${LOG_PREFIX} Review submitted`, { reviewId: id, submittedAt: review.submittedAt });
     return review;

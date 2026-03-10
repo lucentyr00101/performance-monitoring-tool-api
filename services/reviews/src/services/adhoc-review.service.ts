@@ -2,6 +2,7 @@ import { AdhocReview, type AdhocReviewDocument } from '@reviews/models/index.js'
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
 import { Types } from 'mongoose';
+import { sendNotification } from '@reviews/utils/notification-client.js';
 
 // Import stub models to ensure they're registered before population
 import '@reviews/models/employee.model.js';
@@ -236,6 +237,15 @@ export class AdhocReviewService {
     });
 
     console.info(`${LOG_PREFIX} Ad-hoc review created`, { reviewId: review._id, employeeId: data.employeeId });
+
+    // Notify employee of their ad-hoc review assignment (fire-and-forget)
+    sendNotification({
+      userId: data.employeeId,
+      type: 'review_assigned',
+      title: 'Ad-Hoc Review Assigned',
+      message: 'You have been assigned an ad-hoc performance review',
+    });
+
     return review;
   }
 
@@ -273,7 +283,13 @@ export class AdhocReviewService {
       throw new AppError('CONFLICT', 'Cannot send reminder for completed or cancelled review', 409);
     }
 
-    // TODO: Send email reminder
+    sendNotification({
+      userId: review.employeeId.toString(),
+      type: 'review_reminder',
+      title: 'Review Reminder',
+      message: 'This is a reminder to complete your pending performance review',
+    });
+
     review.lastReminderSentAt = new Date();
     await review.save();
 

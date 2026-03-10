@@ -32,11 +32,11 @@ export const employeeStatusSchema = z.enum(['active', 'inactive', 'terminated'])
 export const departmentStatusSchema = z.enum(['active', 'inactive']);
 export const goalStatusSchema = z.enum(['draft', 'active', 'completed', 'cancelled']);
 export const goalTypeSchema = z.enum(['individual', 'team', 'department', 'company']);
-export const reviewStatusSchema = z.enum(['pending', 'in_progress', 'submitted', 'acknowledged']);
-export const reviewCycleStatusSchema = z.enum(['draft', 'active', 'completed', 'cancelled']);
-export const reviewCycleTypeSchema = z.enum(['annual', 'semi-annual', 'quarterly', 'monthly']);
+export const reviewStatusSchema = z.enum(['pending', 'in_progress', 'submitted', 'acknowledged', 'disputed', 'finalized']);
+export const reviewCycleStatusSchema = z.enum(['draft', 'scheduled', 'active', 'completed', 'cancelled']);
+export const reviewCycleTypeSchema = z.enum(['annual', 'semi_annual', 'quarterly', 'monthly', 'probation', 'project', 'ad_hoc']);
 export const employmentTypeSchema = z.enum(['full-time', 'part-time', 'contract']);
-export const reviewTypeSchema = z.enum(['self', 'manager', 'peer']);
+export const reviewTypeSchema = z.enum(['self', 'manager', 'peer', 'hr']);
 export const userRoleSchema = z.enum(['admin', 'hr', 'manager', 'employee', 'csuite']);
 export const employeeRankSchema = z.enum(['junior', 'mid', 'senior', 'manager', 'lead', 'ceo']);
 
@@ -185,13 +185,11 @@ export const updateKeyResultSchema = z.object({
 
 // Review Cycle schemas
 export const reviewCycleSettingsSchema = z.object({
-  include_self_assessment: z.boolean().default(true),
-  include_manager_review: z.boolean().default(true),
-  include_peer_review: z.boolean().default(false),
-  rating_scale: z.object({
-    min: z.number().default(1),
-    max: z.number().default(5),
-  }).optional(),
+  self_review_enabled: z.boolean().default(true),
+  peer_review_enabled: z.boolean().default(false),
+  include_goal_review: z.boolean().default(true),
+  require_calibration: z.boolean().default(false),
+  allow_employee_view_before_release: z.boolean().default(false),
 });
 
 export const createReviewCycleSchema = z.object({

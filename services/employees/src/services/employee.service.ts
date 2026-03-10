@@ -1,8 +1,11 @@
 import { Employee, type EmployeeDocument } from '@employees/models/index.js';
 import { AppError, parsePagination, type PaginationQuery } from '@pmt/shared';
 import mongoose, { type FilterQuery } from 'mongoose';
+import crypto from 'crypto';
 import type { z } from 'zod';
 import type { employeeQuerySchema } from '@pmt/shared';
+
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
 
 const LOG_PREFIX = '[EmployeeService]';
 
@@ -269,8 +272,48 @@ export class EmployeeService {
       email: employee.email
     });
 
+    // Optionally create a user account in the auth service
+    let temporaryPassword: string | undefined;
+    if (data.createUserAccount === true) {
+      temporaryPassword = crypto.randomBytes(8).toString('hex');
+      try {
+        const authRes = await fetch(`${AUTH_SERVICE_URL}/api/v1/auth/internal/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: employee.email,
+            password: temporaryPassword,
+            role: data.userRole ?? 'employee',
+            employee_id: employee._id.toString(),
+          }),
+        });
+        if (!authRes.ok) {
+          console.warn(`${LOG_PREFIX} Auth service returned non-OK when creating user account`, {
+            employeeId: employee._id.toString(),
+            status: authRes.status,
+          });
+          temporaryPassword = undefined;
+        } else {
+          console.info(`${LOG_PREFIX} User account created for employee`, {
+            employeeId: employee._id.toString(),
+          });
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to create user account via auth service`, {
+          employeeId: employee._id.toString(),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        temporaryPassword = undefined;
+      }
+    }
+
     // Fetch with aggregation to get departmentName and managerFullName
-    return this.getEmployeeById(employee._id.toString());
+    const employeeData = await this.getEmployeeById(employee._id.toString());
+
+    if (temporaryPassword) {
+      return { ...employeeData, temporaryPassword };
+    }
+    return employeeData;
   }
 
   /**

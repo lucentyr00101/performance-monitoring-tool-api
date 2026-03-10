@@ -17,4 +17,7 @@ authRoutes.post('/reset-password', (c) => authController.resetPassword(c));
 authRoutes.post('/logout', authMiddleware, (c) => authController.logout(c));
 authRoutes.get('/me', authMiddleware, (c) => authController.me(c));
 
+// Internal service-to-service routes (no auth required — internal network only)
+authRoutes.post('/internal/users', (c) => authController.createUser(c));
+
 export { authRoutes };

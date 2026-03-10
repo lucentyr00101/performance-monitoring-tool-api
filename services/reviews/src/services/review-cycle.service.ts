@@ -3,6 +3,7 @@ import { Review } from '@reviews/models/index.js';
 import { AppError } from '@pmt/shared';
 import type { FilterQuery } from 'mongoose';
 import { Types } from 'mongoose';
+import { sendNotification } from '@reviews/utils/notification-client.js';
 
 const EMPLOYEE_SERVICE_URL = process.env.EMPLOYEE_SERVICE_URL || 'http://localhost:4002';
 const LOG_PREFIX = '[ReviewCycleService]';
@@ -192,7 +193,8 @@ export class ReviewCycleService {
   }
 
   private async fetchEmployeesInScope(
-    cycle: ReviewCycleDocument
+    cycle: ReviewCycleDocument,
+    authHeader: string
   ): Promise<EmployeeData[]> {
     const url = new URL(`${EMPLOYEE_SERVICE_URL}/api/v1/employees`);
     url.searchParams.set('status', 'active');
@@ -203,7 +205,11 @@ export class ReviewCycleService {
     let response: Response;
     try {
       response = await fetch(url.toString(), {
-        signal: AbortSignal.timeout(10000), // 10 second timeout
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
       });
     } catch (err) {
       console.error(`${LOG_PREFIX} Failed to fetch employees`, { error: err });
@@ -251,7 +257,8 @@ export class ReviewCycleService {
   }
 
   private async generateReviewsForCycle(
-    cycle: ReviewCycleDocument
+    cycle: ReviewCycleDocument,
+    authHeader: string
   ): Promise<ReviewGenerationResult> {
     console.info(`${LOG_PREFIX} Generating reviews for cycle`, {
       cycleId: cycle._id,
@@ -274,7 +281,7 @@ export class ReviewCycleService {
     }
 
     // Fetch employees
-    const employees = await this.fetchEmployeesInScope(cycle);
+    const employees = await this.fetchEmployeesInScope(cycle, authHeader);
 
     if (employees.length === 0) {
       console.warn(`${LOG_PREFIX} No employees in scope for cycle`, {
@@ -360,16 +367,6 @@ export class ReviewCycleService {
             reason: 'No manager assigned',
           });
         }
-
-        // Peer reviews - not implemented yet
-        if (cycle.settings?.peerReviewEnabled) {
-          result.reviewsSkipped.peerReview++;
-        }
-
-        // HR reviews - not implemented yet
-        if (cycle.settings?.requireCalibration) {
-          result.reviewsSkipped.hrReview++;
-        }
       } catch (err) {
         console.error(`${LOG_PREFIX} Error processing employee`, {
           employeeId: employee.id,
@@ -384,6 +381,43 @@ export class ReviewCycleService {
       }
     }
 
+    // Peer reviews
+    if (cycle.settings?.peerReviewEnabled) {
+      console.info(`${LOG_PREFIX} Generating peer reviews`, { cycleId: cycle._id });
+
+      // Group employees by department
+      const byDept = new Map<string, EmployeeData[]>();
+      for (const emp of employees) {
+        if (emp.departmentId) {
+          if (!byDept.has(emp.departmentId)) byDept.set(emp.departmentId, []);
+          byDept.get(emp.departmentId)!.push(emp);
+        }
+      }
+
+      for (const employee of employees) {
+        if (!employee.departmentId) continue;
+        const deptEmployees = byDept.get(employee.departmentId) ?? [];
+        // Exclude self and manager, take up to 3 peers
+        const peers = deptEmployees
+          .filter(e => e.id !== employee.id && e.id !== employee.managerId)
+          .slice(0, 3);
+
+        for (const peer of peers) {
+          try {
+            reviewsToCreate.push({
+              reviewCycleId: cycle._id,
+              employeeId: new Types.ObjectId(employee.id),
+              reviewerId: new Types.ObjectId(peer.id),
+              reviewerType: 'peer',
+              status: 'pending',
+            });
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} Invalid peer ID`, { peerId: peer.id });
+          }
+        }
+      }
+    }
+
     // Bulk insert reviews
     if (reviewsToCreate.length > 0) {
       try {
@@ -395,10 +429,31 @@ export class ReviewCycleService {
           ordered: false,
         });
 
-        // Count by type
+        // Count by type and send notifications
+        const employeeMap = new Map(employees.map(e => [e.id, e]));
+
         for (const review of insertResult) {
           const reviewType = review.reviewerType as 'self' | 'manager' | 'peer' | 'hr';
           result.reviewsCreated[reviewType]++;
+
+          // Fire-and-forget notifications
+          if (review.reviewerType === 'self') {
+            sendNotification({
+              userId: review.employeeId.toString(),
+              type: 'review_assigned',
+              title: 'Performance Review Assigned',
+              message: 'Your performance review has been assigned',
+            });
+          } else if (review.reviewerType === 'manager') {
+            const emp = employeeMap.get(review.employeeId.toString());
+            const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'an employee';
+            sendNotification({
+              userId: review.reviewerId.toString(),
+              type: 'review_assigned',
+              title: 'Review Assignment',
+              message: `You have a new review to complete for ${empName}`,
+            });
+          }
         }
 
         console.info(`${LOG_PREFIX} Reviews created successfully`, {
@@ -452,7 +507,8 @@ export class ReviewCycleService {
   }
 
   async launchReviewCycle(
-    id: string
+    id: string,
+    authHeader: string
   ): Promise<ReviewCycleDocument & { reviewGeneration?: ReviewGenerationResult }> {
     console.info(`${LOG_PREFIX} Launching review cycle`, { cycleId: id });
 
@@ -486,7 +542,7 @@ export class ReviewCycleService {
     // Generate reviews for all eligible employees
     let reviewGeneration: ReviewGenerationResult | undefined;
     try {
-      reviewGeneration = await this.generateReviewsForCycle(cycle);
+      reviewGeneration = await this.generateReviewsForCycle(cycle, authHeader);
       const totalCreated = Object.values(reviewGeneration.reviewsCreated).reduce(
         (sum, count) => sum + count,
         0
