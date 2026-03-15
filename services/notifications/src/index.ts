@@ -61,15 +61,14 @@ app.notFound((c) => {
 async function start() {
   const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
   const dbName = process.env.DB_NAME || 'notification_db';
-  const authSource = process.env.MONGO_AUTH_SOURCE || 'admin';
-
-  const hasCredentials = mongoUri.includes('@');
-  const connectionString = hasCredentials
-    ? `${mongoUri}/${dbName}?authSource=${authSource}`
-    : `${mongoUri}/${dbName}`;
+  
+  // For MongoDB Atlas URIs, don't append db name to URI - pass it as option
+  const isAtlasUri = mongoUri.includes('mongodb+srv') || mongoUri.includes('mongodb.net');
+  const connectionString = isAtlasUri ? mongoUri : `${mongoUri}/${dbName}`;
 
   try {
-    await mongoose.connect(connectionString);
+    const connectionOptions = isAtlasUri ? { dbName } : {};
+    await mongoose.connect(connectionString, connectionOptions);
     console.log(`✅ Connected to MongoDB: ${dbName}`);
 
     const port = parseInt(process.env.PORT || '4006');
